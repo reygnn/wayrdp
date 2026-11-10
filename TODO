@@ -1,0 +1,110 @@
+TODO
+
+Stand 2026-11-10: M0 bis M5 aus docs/wayrdp-Entwurf.md sind fertig und auf
+main. Erster Test mit echtem mstsc (Windows-11-VM auf watermoon, über Bitvise):
+Anmeldung per NLA, Größe nach Fenster (disp), Zwischenablage-Kanal, Zeigerbilder
+und Synchronize gehen. Aber mstsc bietet ohne GFX kein RemoteFX an:
+
+    RemoteFX 0 (id 0, mode 0, RLGR 1), surface commands 0x12,
+    frame markers 1, multifrag 4276224        -> active, 1280x800, Planar
+
+(0x12 = SET_SURFACE_BITS | FRAME_MARKER, kein STREAM_SURFACE_BITS 0x40.)
+wayrdp läuft deshalb mit Planar-Bitmaps. Lokal reicht das ("ls -la /usr/bin"
+schnell), ein deckend gezogenes Fenster ruckelt leicht: 7,9 fps, 1863 kB/s
+(~15 Mbit/s), 7 ms Kodieren pro Frame, wayrdp 5,7 % eines Kerns, mwc unter 1 %.
+Nicht der Server bremst; vermutlich mstsc in der VM, die gleichzeitig mit
+Windows Update auf zwei Kernen lief.
+
+Testaufbau zuhause (nicht im Repo):
+  ~/data/vm/wayrdp-test.sh       mwc headless + wayrdp in der Box wayrdp-dev,
+                                 PORT=3389 (Bitvises RDP-Knopf nimmt immer 3389),
+                                 KBD=, AUTH=nla|pam, --rebuild; Logs und Config
+                                 in ~/data/vm/wayrdp-test/
+  VM win11pro (libvirt qemu:///system), Bitvise darin -> ssh 192.168.122.1,
+  dann "New Remote Desktop" auf 127.0.0.1.
+Automatische Tests: README unter "Building and tests" (test/mwc-rdp.sh,
+test/pam-rdp.sh, meson test). mwc dafür aus einer Kopie bauen, nicht im
+mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
+
+
+* Messung wiederholen, wenn die VM ruhig ist. Sobald Windows Update in der VM
+  durch ist (qemu im Leerlauf nicht mehr ~200 %), ein Fenster deckend im Kreis
+  ziehen und die fps-Zeilen (server.c, alle 10 s, -L debug) und die CPU von
+  wayrdp, mwc und qemu messen. Bleibt es bei ~8 fps, zählen, wie viele
+  Mausbewegungen mstsc schickt (on_mouse in src/rdp/input.c: einen Zähler in
+  die Statistikzeile von server.c) und wie viele Frames mwc liefert
+  (process_frame in main.c). Erst dann entscheiden, ob der Engpass mstsc, die
+  Eingabe oder die Aufnahme ist.
+  Abnahme: eine Zeile im README unter den Messwerten, mit Bewegungen/s und
+  Frames/s.
+
+* GFX-Pipeline (RDPGFX), damit mstsc einen sparsamen Codec nimmt. Der Entwurf
+  sah das als v2 vor; nach dem mstsc-Test ist es der wichtigste Punkt, vor
+  allem für den Firmentunnel (Planar ~15 Mbit/s bei einem gezogenen Fenster).
+  - Ubuntus FreeRDP 3.32 ist ohne H.264 gebaut (WITH_GFX_H264, OpenH264,
+    FFmpeg alle aus, freerdp/config.h). Ohne weitere Abhängigkeit gehen über
+    GFX: RemoteFX (RDPGFX_CODECID_CAVIDEO), RemoteFX Progressive
+    (progressive_compress), Planar, ClearCodec. H.264 (AVC420) nur mit einem
+    eigenen Encoder, z. B. x264 über libavcodec, und dem AVC420-Bitstream
+    (Metablock mit den Rechtecken, dann die NAL-Units) selbst gebaut.
+  - Vorschlag: zuerst GFX mit RemoteFX bzw. Progressive (gleicher Encoder wie
+    heute, nur ein anderer Transport), Bandbreite messen; AVC420 danach als
+    eigene Stufe, falls nötig.
+  - Server-Seite: freerdp/server/rdpgfx.h (rdpgfx_server_context_new auf der
+    vcm, nach drdynvc READY wie display.c), CapsAdvertise beantworten
+    (CapsConfirm mit der höchsten passenden Version, 10.x/8.1/8.0), dann
+    ResetGraphics, CreateSurface, MapSurfaceToOutput; je Frame StartFrame,
+    SurfaceCommand(s), EndFrame. Flusskontrolle über RDPGFX_FRAME_ACKNOWLEDGE
+    (queueDepth, SUSPEND_FRAME_ACKNOWLEDGEMENT), statt der Frame-Marker von
+    heute. Größenwechsel: ResetGraphics + neue Surface. Zeiger bleibt über die
+    alten Pointer-Updates.
+  - Vorlage: server/shadow/shadow_client.c in FreeRDP 3.32
+    (shadow_client_rdpgfx_caps_advertise, shadow_client_send_surface_gfx,
+    shadow_client_send_rfx/_progressive). Der Rdpgfx-Server läuft in FreeRDP
+    vermutlich wie disp mit eigenem Thread: prüfen und wie in display.c über
+    ein eventfd in die Hauptschleife holen.
+  - SupportGraphicsPipeline in peer.c (apply_settings) erst einschalten, wenn
+    der Pfad steht; Planar ohne GFX als Rückfall behalten.
+  Abnahme: test/mwc-rdp.sh mit xfreerdp3 /gfx bestätigt GFX und den Codec im
+  Log ("active, …, GFX …"); mstsc in der VM meldet GFX; die fps-Zeile beim
+  gezogenen Fenster zeigt deutlich weniger kB/s als Planar (Zahlen ins README).
+
+* Irreführende Warnung "The output didn't become WxH; staying at …". Kommt,
+  wenn ein Client die Ausgabe auf seine Größe stellen lässt und dann gleich
+  geht (z. B. xfreerdp3 +auth-only): ohne Client läuft keine Aufnahme, also
+  kommen keine Frames der neuen Größe, und want_timer in server.c läuft ab.
+  Ausweg: in rdp_server_peer_gone() für den aktiven Peer want_width/height
+  löschen und want_timer anhalten.
+  Abnahme: die Warnung erscheint in test/mwc-rdp.sh nicht mehr nach den
+  +auth-only-Verbindungen.
+
+* Test in der Firma. Auf dem Firmenserver mit mwc/docs/wayland-rdp-upgrade.sh
+  (wayrdp auf 3390 neben xrdp), Bitvise-C2S-Regel 13390 -> 3390, mstsc.
+  Prüfen: Bildrate und Gefühl über den echten Tunnel (Planar), Tastatur mit
+  dem Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
+  Erst danach "--switch" (xrdp aus, wayrdp auf 3389).
+
+* Kleinigkeiten
+  - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.
+  - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht
+    ab): Testprozesse landen dort. distrobox stop räumt; oder die Box mit
+    init=true anlegen.
+  - Version: 0.1.0 ist so gewollt (Entscheidung 2026-11-10). Tag/Release nur
+    auf Nachfrage.
+
+* Offene Fragen aus dem Entwurf, unverändert offen
+  - Kann mwc die virtuellen Eingabeprotokolle nur wayrdp anbieten statt allen
+    Programmen der Sitzung (eigener Socket, security-context-v1)?
+  - Kommt ein Steuer-Socket wie wayvncctl zurück (Client trennen, Status)?
+  - wlroots-Fix 40640950 (output-management, Absturz bei zweitem Client): in
+    mwc mitführen oder auf ein Release warten.
+
+* Bekannte Eigenheiten der Test-Clients (für test/mwc-rdp.sh, nicht wayrdp)
+  - wlfreerdp3: deprecated; hängt ab und zu, sobald Zeigerbilder kommen;
+    seine Zwischenablage macht aus Text \u-Escapes; stürzt beim Trennen ab.
+  - sdl-freerdp3 (Standard für die Eingabe): verwirft das erste Rad-Ereignis,
+    sendet für eine einzelne Raste nichts.
+  - xfreerdp3 unter Xwayland in mwc: gibt den Zeiger einmal weiter, danach
+    nicht mehr; bietet RemoteFX auch mit -rfx an (deshalb
+    WAYRDP_FORCE_PLANAR=1 für den Planar-Test); behält bei DesktopResize
+    seine Fenstergröße.
