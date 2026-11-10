@@ -77,6 +77,10 @@ struct rdp_server_config {
 	void (*on_wants_frames_changed)(void* userdata);
 	const struct rdp_input_handler* input;
 	const struct rdp_clipboard_handler* clipboard;
+	/* Asks the compositor to give the output this size (already within
+	 * RDP's and mwc's limits). False if it can't, e.g. without
+	 * wlr-output-management. */
+	bool (*resize_output)(void* userdata, uint32_t width, uint32_t height);
 	void* userdata;
 };
 
@@ -96,6 +100,14 @@ void rdp_server_set_desktop_size(struct rdp_server* self, uint32_t width,
  * reference on the newest buffer and encodes from it. */
 void rdp_frame_submit(struct rdp_server* self, struct wv_buffer* buffer,
 		const struct pixman_region16* damage);
+
+/* The pointer image: premultiplied ARGB8888, rows top-down, and its
+ * hotspot. */
+void rdp_server_set_cursor(struct rdp_server* self, const uint8_t* pixels,
+		uint32_t width, uint32_t height, uint32_t stride,
+		uint32_t hot_x, uint32_t hot_y);
+/* The pointer left the output (false) or came back (true). */
+void rdp_server_set_cursor_visible(struct rdp_server* self, bool visible);
 
 /* The session's clipboard changed: text in it, or not. */
 void rdp_server_clipboard_changed(struct rdp_server* self, bool has_text);

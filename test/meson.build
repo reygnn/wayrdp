@@ -37,3 +37,11 @@ test('text', executable('text',
 	include_directories: [inc, include_directories('../src')],
 	dependencies: [ ],
 ))
+test('convert', executable('convert',
+	[
+		'convert-test.c',
+		'../src/rdp/convert.c',
+	],
+	include_directories: [inc, include_directories('../src')],
+	dependencies: [ ],
+))

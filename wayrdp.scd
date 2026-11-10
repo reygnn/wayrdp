@@ -84,6 +84,12 @@ wayrdp needs wlr-screencopy or ext-image-copy-capture, and the virtual
 keyboard and pointer protocols. mwc offers the latter only with
 MWC_VIRTUAL_INPUT=1.
 
+For the output to follow the client's window, the compositor must offer
+wlr-output-management (mwc: *Mwm\*outputManagement: true*), and no other
+client may use it at the same time: wlroots 0.19 and 0.20 abort then. The
+pointer image needs ext-image-copy-capture's cursor session; without it,
+or with *-r*, the pointer is drawn into the picture.
+
 # AUTHORS
 
 wayrdp is a fork of wayvnc by Andri Yngvason.

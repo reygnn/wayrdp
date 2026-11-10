@@ -30,12 +30,15 @@
 #include <winpr/wtsapi.h>
 
 #include "rdp/internal.h"
+#include "rdp/convert.h"
 #include "buffer.h"
 #include "log.h"
 #include "time-util.h"
 
 /* Without an acknowledgement for this long, stop waiting for one. */
 #define ACK_TIMEOUT_US 250000
+/* How long frames of a size asked for may take to come. */
+#define RESIZE_WAIT_US 1500000
 #define STATS_INTERVAL_US (10 * 1000000)
 
 static void notify_wants_frames(struct rdp_server* self)
@@ -151,6 +154,10 @@ void rdp_server_destroy(struct rdp_server* self)
 		aml_stop(aml_get_default(), self->stats_ticker);
 		aml_unref(self->stats_ticker);
 	}
+	if (self->want_timer) {
+		aml_stop(aml_get_default(), self->want_timer);
+		aml_unref(self->want_timer);
+	}
 
 	/* A job still in the worker holds the server; let it finish. */
 	while (self->encoding) {
@@ -162,6 +169,7 @@ void rdp_server_destroy(struct rdp_server* self)
 	pixman_region_fini(&self->pending);
 	rdp_encoder_fini(&self->encoder);
 	rdp_clipboard_writers_destroy(self);
+	free(self->cursor_pixels);
 	free(self);
 }
 
@@ -234,6 +242,49 @@ void rdp_server_peer_gone(struct rdp_server* self, struct rdp_peer* peer)
 		drop_current(self);
 		notify_wants_frames(self);
 	}
+}
+
+static void on_want_timeout(struct aml_timer* timer)
+{
+	struct rdp_server* self = aml_get_userdata(timer);
+	if (!self->want_width)
+		return;
+	wv_log(WV_LOG_WARNING, "The output didn't become %ux%u; staying at %ux%u",
+			self->want_width, self->want_height, self->width,
+			self->height);
+	self->want_width = self->want_height = 0;
+	rdp_server_schedule(self);
+}
+
+bool rdp_server_request_size(struct rdp_server* self, uint32_t width,
+		uint32_t height, uint32_t* out_width, uint32_t* out_height)
+{
+	uint32_t w, h;
+	rdp_clamp_size(width, height, &w, &h);
+	*out_width = w;
+	*out_height = h;
+
+	if (!self->config.resize_output)
+		return false;
+	if (w == self->width && h == self->height && !self->want_width)
+		return true;
+	if (w == self->want_width && h == self->want_height)
+		return true;
+	if (!self->config.resize_output(self->config.userdata, w, h))
+		return false;
+
+	self->want_width = w;
+	self->want_height = h;
+	self->want_until_us = gettime_us() + RESIZE_WAIT_US;
+	if (!self->want_timer)
+		self->want_timer = aml_timer_new(RESIZE_WAIT_US, on_want_timeout,
+				self, NULL);
+	if (self->want_timer) {
+		aml_stop(aml_get_default(), self->want_timer);
+		aml_set_duration(self->want_timer, RESIZE_WAIT_US);
+		aml_start(aml_get_default(), self->want_timer);
+	}
+	return true;
 }
 
 void rdp_server_refresh(struct rdp_server* self, const RECTANGLE_16* rects,
@@ -366,8 +417,13 @@ void rdp_server_schedule(struct rdp_server* self)
 	}
 	stop_ack_timer(self);
 
-	/* The output changed size: the client follows, then reactivates. */
+	/* The output changed size: the client follows, then reactivates.
+	 * Unless the output is about to get the client's size. */
 	if (!rdp_peer_size_matches(peer, self->width, self->height)) {
+		if (self->want_width && gettime_us() < self->want_until_us
+				&& rdp_peer_size_matches(peer, self->want_width,
+					self->want_height))
+			return;
 		if (!rdp_peer_resize(peer, self->width, self->height))
 			rdp_peer_close(peer);
 		return;
@@ -433,6 +489,12 @@ void rdp_frame_submit(struct rdp_server* self, struct wv_buffer* buffer,
 		self->width = buffer->width;
 		self->height = buffer->height;
 		self->encoder_reset = true;
+		if (self->width == self->want_width
+				&& self->height == self->want_height) {
+			self->want_width = self->want_height = 0;
+			if (self->want_timer)
+				aml_stop(aml_get_default(), self->want_timer);
+		}
 	}
 	self->pixel_format = format;
 

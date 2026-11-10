@@ -190,7 +190,7 @@ static void output_manager_config_succeeded(void* data,
 static void output_manager_config_failed(void* data,
 		struct zwlr_output_configuration_v1* config)
 {
-	wv_trace("config request failed");
+	wv_log(WV_LOG_WARNING, "The compositor refused the new output size");
 	zwlr_output_configuration_v1_destroy(config);
 }
 
@@ -259,6 +259,11 @@ void wlr_output_manager_setup(struct zwlr_output_manager_v1* output_manager)
 	wlr_output_manager = output_manager;
 	zwlr_output_manager_v1_add_listener(wlr_output_manager,
 			&wlr_output_manager_listener, NULL);
+}
+
+bool wlr_output_manager_available(void)
+{
+	return wlr_output_manager != NULL;
 }
 
 void wlr_output_manager_destroy(void)
@@ -372,7 +377,9 @@ bool wlr_output_manager_resize_output(struct output* output,
 	if (!config)
 		return false;
 	if (!wlr_output_manager_configure_output(config, output, width, height,
-				0, 0))
+				0, 0)) {
+		wlr_output_manager_abort_config(config);
 		return false;
+	}
 	return wlr_output_manager_commit_config(config);
 }

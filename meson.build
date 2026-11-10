@@ -100,6 +100,9 @@ sources = [
 	'src/rdp/input.c',
 	'src/rdp/clipboard.c',
 	'src/rdp/text.c',
+	'src/rdp/convert.c',
+	'src/rdp/display.c',
+	'src/rdp/cursor.c',
 ]
 
 dependencies = [

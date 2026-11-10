@@ -25,6 +25,9 @@ struct zwlr_output_configuration_v1;
 
 void wlr_output_manager_setup(struct zwlr_output_manager_v1* output_manager);
 void wlr_output_manager_destroy(void);
+/* Whether the compositor offers wlr-output-management (mwc only with
+ * Mwm*outputManagement: true). */
+bool wlr_output_manager_available(void);
 
 struct zwlr_output_configuration_v1* wlr_output_manager_start_config(void);
 bool wlr_output_manager_commit_config(struct zwlr_output_configuration_v1* config);

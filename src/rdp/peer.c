@@ -21,6 +21,7 @@
 #include <freerdp/freerdp.h>
 #include <freerdp/peer.h>
 #include <freerdp/channels/wtsvc.h>
+#include <freerdp/channels/drdynvc.h>
 #include <freerdp/crypto/certificate.h>
 #include <freerdp/crypto/privatekey.h>
 #include <winpr/synch.h>
@@ -92,6 +93,7 @@ void rdp_peer_destroy(struct rdp_peer* self)
 	LIST_REMOVE(self, link);
 	rdp_server_peer_gone(self->server, self);
 	rdp_clipboard_close(self);
+	rdp_display_close(self);
 
 	if (self->activated || self->frames_sent)
 		wv_log(WV_LOG_INFO, "%s disconnected after %.0f s, %u frames, %.1f MB",
@@ -122,8 +124,18 @@ static void on_peer_event(struct aml_handler* handler)
 
 	struct rdp_peer_context* ctx =
 		(struct rdp_peer_context*)self->client->context;
-	if (!WTSVirtualChannelManagerCheckFileDescriptor(ctx->vcm))
+	/* FreeRDP sets drdynvc up once, on the first call that may open it.
+	 * Not before the connection sequence is through: its first message
+	 * in the middle of licensing throws the client out, and before the
+	 * client joined the channel it never comes. */
+	BOOL open_dvc = self->connected
+		&& WTSVirtualChannelManagerIsChannelJoined(ctx->vcm,
+				DRDYNVC_SVC_CHANNEL_NAME);
+	if (!WTSVirtualChannelManagerCheckFileDescriptorEx(ctx->vcm, open_dvc)) {
 		rdp_peer_close(self);
+		return;
+	}
+	rdp_display_check(self);
 }
 
 /* After NLA. NTLM checked the password against the SAM file, which holds
@@ -156,6 +168,8 @@ static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identi
 
 static BOOL on_post_connect(freerdp_peer* client)
 {
+	struct rdp_peer* self = peer_from_context(client->context);
+	self->connected = true;
 	rdpSettings* settings = client->context->settings;
 	wv_log(WV_LOG_INFO, "%s: client wants %ux%u at %u bpp", client->hostname,
 			freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
@@ -191,10 +205,26 @@ static BOOL on_activate(freerdp_peer* client)
 	if (!self->logged_on)
 		return FALSE;
 
-	/* The desktop has the output's size, not the window's (until M4). */
+	/* The output takes the client's size if it can; otherwise the client
+	 * gets the output's. */
+	uint32_t client_w = freerdp_settings_get_uint32(settings,
+			FreeRDP_DesktopWidth);
+	uint32_t client_h = freerdp_settings_get_uint32(settings,
+			FreeRDP_DesktopHeight);
 	if (server->width && server->height
-			&& !rdp_peer_size_matches(self, server->width, server->height))
-		return rdp_peer_resize(self, server->width, server->height);
+			&& !rdp_peer_size_matches(self, server->width, server->height)) {
+		uint32_t w, h;
+		if (rdp_server_request_size(server, client_w, client_h, &w, &h)) {
+			if (w != client_w || h != client_h)
+				/* Within the limits first; it comes back here. */
+				return rdp_peer_resize(self, w, h);
+			wv_log(WV_LOG_INFO, "%s: output follows the client: %ux%u",
+					client->hostname, w, h);
+		} else {
+			return rdp_peer_resize(self, server->width,
+					server->height);
+		}
+	}
 
 	wv_log(WV_LOG_DEBUG, "%s: RemoteFX %d (id %u, mode %u, RLGR %u), surface commands 0x%x, frame markers %d, multifrag %u",
 			client->hostname,
@@ -227,6 +257,7 @@ static BOOL on_activate(freerdp_peer* client)
 
 	rdp_server_peer_activated(server, self);
 	rdp_clipboard_open(self);
+	rdp_cursor_reset(self);
 	return TRUE;
 }
 
@@ -298,7 +329,7 @@ static bool apply_settings(struct rdp_peer* self)
 		{ FreeRDP_SurfaceFrameMarkerEnabled, true },
 		{ FreeRDP_FrameMarkerCommandEnabled, true },
 		{ FreeRDP_SupportGraphicsPipeline, false },
-		{ FreeRDP_SupportDisplayControl, false },
+		{ FreeRDP_SupportDisplayControl, true },
 		{ FreeRDP_DesktopResize, true },
 		{ FreeRDP_RedirectClipboard, true },
 		{ FreeRDP_SuppressOutput, true },
@@ -312,6 +343,15 @@ static bool apply_settings(struct rdp_peer* self)
 		if (!freerdp_settings_set_bool(settings, bools[i].key,
 					bools[i].value))
 			return false;
+
+	/* What the server offers; the client's capabilities narrow it. */
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_PointerCacheSize, 32)
+			|| !freerdp_settings_set_uint32(settings,
+				FreeRDP_ColorPointerCacheSize, 32)
+			|| !freerdp_settings_set_uint32(settings,
+				FreeRDP_LargePointerFlag, LARGE_POINTER_FLAG_96x96
+					| LARGE_POINTER_FLAG_384x384))
+		return false;
 
 	if (!freerdp_settings_set_string(settings, FreeRDP_NtlmSamFile,
 				config->sam_file)
@@ -405,6 +445,7 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 
 failure:
 	rdp_clipboard_close(self);
+	rdp_display_close(self);
 	wv_log(WV_LOG_ERROR, "Can't set up the connection from %s",
 			client->hostname);
 	stop_handlers(self);
@@ -566,4 +607,9 @@ void rdp_peer_send(struct rdp_peer* self, const struct rdp_encode_job* job)
 		send_remotefx(self, job);
 	else
 		send_planar(self, job);
+
+	if (!self->picture_sent && !self->closing) {
+		self->picture_sent = true;
+		rdp_cursor_send(self);
+	}
 }

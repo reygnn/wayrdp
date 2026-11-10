@@ -51,6 +51,7 @@
 #include "observer.h"
 #include "option-parser.h"
 #include "output.h"
+#include "output-management.h"
 #include "pointer.h"
 #include "rdp/server.h"
 #include "rdp/auth.h"
@@ -89,6 +90,9 @@ struct wayrdp {
 	struct image_source* image_source;
 	struct screencopy* screencopy;
 	bool capturing;
+	/* The pointer image, unless it is drawn into the picture. */
+	struct screencopy* cursor_sc;
+	bool warned_no_output_management;
 
 	struct seat* seat;
 	struct keyboard keyboard;
@@ -151,6 +155,8 @@ static void start_capture(struct wayrdp* self, bool immediate)
 		wayrdp_exit(self, 1);
 		return;
 	}
+	if (self->cursor_sc && !self->capturing)
+		screencopy_start(self->cursor_sc, true);
 	self->capturing = true;
 }
 
@@ -159,6 +165,8 @@ static void stop_capture(struct wayrdp* self)
 	if (!self->capturing)
 		return;
 	screencopy_stop(self->screencopy);
+	if (self->cursor_sc)
+		screencopy_stop(self->cursor_sc);
 	if (self->image_source)
 		image_source_release_power_on(self->image_source);
 	self->capturing = false;
@@ -352,10 +360,90 @@ static double rate_output_format(const void* userdata,
 	return 0;
 }
 
+static void on_cursor_done(enum screencopy_result result,
+		struct wv_buffer* buffer, struct image_source* source,
+		void* userdata)
+{
+	struct wayrdp* self = userdata;
+
+	switch (result) {
+	case SCREENCOPY_FATAL:
+		wv_log(WV_LOG_WARNING, "Pointer capture failed for good");
+		return;
+	case SCREENCOPY_FAILED:
+		if (self->capturing)
+			screencopy_start(self->cursor_sc, true);
+		return;
+	case SCREENCOPY_DONE:
+		break;
+	}
+
+	if (self->rdp && pixman_region_not_empty(&buffer->frame_damage)) {
+		if (buffer->format == DRM_FORMAT_ARGB8888)
+			rdp_server_set_cursor(self->rdp, buffer->pixels,
+					buffer->width, buffer->height,
+					buffer->stride, buffer->x_hotspot,
+					buffer->y_hotspot);
+		else
+			wv_log(WV_LOG_DEBUG, "Pointer image without alpha ignored");
+	}
+	wv_buffer_release(buffer);
+
+	if (self->capturing)
+		screencopy_start(self->cursor_sc, false);
+}
+
+static void on_cursor_enter(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->rdp)
+		rdp_server_set_cursor_visible(self->rdp, true);
+}
+
+static void on_cursor_leave(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->rdp)
+		rdp_server_set_cursor_visible(self->rdp, false);
+}
+
+/* Only ARGB: the client needs the alpha. */
+static double rate_cursor_format(const void* userdata,
+		enum wv_buffer_type type, uint32_t format, uint64_t modifier)
+{
+	return type == WV_BUFFER_SHM && format == DRM_FORMAT_ARGB8888 ? 1.0 : 0;
+}
+
+/* The pointer image for the client to draw. Without a cursor session the
+ * pointer goes into the picture instead. */
+static void configure_cursor(struct wayrdp* self)
+{
+	screencopy_destroy(self->cursor_sc);
+	self->cursor_sc = NULL;
+	if (self->overlay_cursor || !self->seat || self->probe_frames)
+		return;
+
+	self->cursor_sc = screencopy_create_cursor(self->image_source,
+			self->seat->wl_seat);
+	if (!self->cursor_sc) {
+		wv_log(WV_LOG_INFO, "No pointer capture: drawing the pointer into the picture");
+		self->overlay_cursor = true;
+		return;
+	}
+	self->cursor_sc->on_done = on_cursor_done;
+	self->cursor_sc->cursor_enter = on_cursor_enter;
+	self->cursor_sc->cursor_leave = on_cursor_leave;
+	self->cursor_sc->rate_format = rate_cursor_format;
+	self->cursor_sc->userdata = self;
+	self->cursor_sc->rate_limit = self->max_rate * 2;
+	self->cursor_sc->enable_linux_dmabuf = false;
+}
+
 static bool configure_screencopy(struct wayrdp* self)
 {
 	stop_capture(self);
 	screencopy_destroy(self->screencopy);
+	configure_cursor(self);
 
 	self->screencopy = screencopy_create(self->image_source,
 			self->overlay_cursor);
@@ -554,6 +642,25 @@ static int on_clipboard_read(void* userdata,
 	return data_control_read(&self->data_control, done, cbdata);
 }
 
+/* The RDP side wants another output size (the client's window). */
+static bool on_resize_output(void* userdata, uint32_t width, uint32_t height)
+{
+	struct wayrdp* self = userdata;
+	if (!wayland || !self->image_source
+			|| !image_source_is_output(self->image_source))
+		return false;
+	if (!wlr_output_manager_available()) {
+		if (!self->warned_no_output_management)
+			wv_log(WV_LOG_WARNING, "The compositor offers no output management, the size can't follow the client. For mwc: Mwm*outputManagement: true");
+		self->warned_no_output_management = true;
+		return false;
+	}
+	struct output* output = output_from_image_source(self->image_source);
+	wv_log(WV_LOG_DEBUG, "Asking for %ux%u on %s", width, height,
+			output_get_name(output));
+	return wlr_output_manager_resize_output(output, width, height);
+}
+
 static const struct rdp_clipboard_handler clipboard_handler = {
 	.offer = on_clipboard_offer,
 	.withdraw = on_clipboard_withdraw,
@@ -704,6 +811,8 @@ static void on_output_removed(struct observer* observer, void* data)
 	stop_capture(self);
 	screencopy_destroy(self->screencopy);
 	self->screencopy = NULL;
+	screencopy_destroy(self->cursor_sc);
+	self->cursor_sc = NULL;
 	if (self->next_frame) {
 		wv_buffer_release(self->next_frame);
 		self->next_frame = NULL;
@@ -744,6 +853,8 @@ static void on_wayland_destroyed(struct observer* observer, void* data)
 	screencopy_stop(self->screencopy);
 	screencopy_destroy(self->screencopy);
 	self->screencopy = NULL;
+	screencopy_destroy(self->cursor_sc);
+	self->cursor_sc = NULL;
 	self->capturing = false;
 	destroy_input(self);
 	self->image_source = NULL;
@@ -1054,6 +1165,7 @@ int main(int argc, char* argv[])
 		.on_wants_frames_changed = on_wants_frames_changed,
 		.input = &input_handler,
 		.clipboard = &clipboard_handler,
+		.resize_output = on_resize_output,
 		.userdata = &self,
 	};
 

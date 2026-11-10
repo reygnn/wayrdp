@@ -3,14 +3,18 @@
 #  - mwc "A" on a headless output (magenta desktop, a terminal with a clock),
 #    wayrdp serving it on localhost
 #  - xfreerdp3 +auth-only with the right and a wrong password (NLA)
-#  - mwc "B" on a second headless output, an RDP client in it (wlfreerdp3,
-#    or CLIENT=xfreerdp3 through Xwayland), connected to wayrdp; a
-#    screenshot of B must show A's magenta desktop.
+#  - mwc "B" on a second headless output, an RDP client in it
+#    (sdl-freerdp3, or CLIENT=xfreerdp3 through Xwayland, or wlfreerdp3),
+#    connected to wayrdp; a screenshot of B must show A's magenta desktop.
 #  - test/vinput moves, clicks and types in B, on the client window; A's
 #    pointer, focus and a terminal running cat must show it, German layout
 #    on wayrdp's side (-k de).
 #  - mwc "C" runs xfreerdp3, which replaces B's session; wl-copy in one,
 #    wl-paste in the other, both ways, Unicode and several lines; no echo.
+#  - a pointer image goes to the client.
+#  - mwc "D" runs xfreerdp3 /dynamic-resolution asking for 901x700: the
+#    output becomes 900x700 (even width), and when D's window is resized to
+#    1100x800 the output follows (display control).
 #
 #   MWC=/path/to/mwc test/mwc-rdp.sh [build/wayrdp]
 #
@@ -23,8 +27,8 @@
 # replaces the session, and three wrong passwords lock the next connection
 # out.
 #
-# Needs mwc, foot, Xwayland, xfreerdp3, wlfreerdp3, grim and wl-clipboard,
-# and build/test/vinput. WAYRDP_WRAP goes in front of
+# Needs mwc, foot, Xwayland, xfreerdp3, sdl-freerdp3, grim, wl-clipboard
+# and xdotool, and build/test/vinput. WAYRDP_WRAP goes in front of
 # wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
@@ -34,12 +38,16 @@ PORT=${PORT:-$((20000 + RANDOM % 10000))}
 CLIENT_SIZE=${CLIENT_SIZE:-1024x768}
 CLIENT_OPTS=${CLIENT_OPTS:-}
 EXPECT_CODEC=${EXPECT_CODEC:-RemoteFX}
-# The client in B. wlfreerdp3 (deprecated upstream, crashes when the
-# connection ends, which doesn't matter here) is a Wayland client and passes
-# the input on. xfreerdp3 under Xwayland in mwc sends the pointer once and
-# then no more, so the input part runs only with wlfreerdp3.
-CLIENT=${CLIENT:-wlfreerdp3}
-for tool in foot xfreerdp3 "$CLIENT" grim Xwayland python3 wl-copy wl-paste; do
+# The client in B: sdl-freerdp3, a Wayland client, passes the input on.
+# xfreerdp3 under Xwayland in mwc sends the pointer once and then no more,
+# so the input part doesn't run with it. wlfreerdp3 (deprecated upstream)
+# works too, but now and then hangs once pointer images come.
+CLIENT=${CLIENT:-sdl-freerdp3}
+# With output management (Mwm*outputManagement: true in A) the output takes
+# the client's size; without it the client gets the output's.
+OUTPUT_MANAGEMENT=${OUTPUT_MANAGEMENT:-1}
+if [ "$OUTPUT_MANAGEMENT" = 1 ]; then SIZE=$CLIENT_SIZE; else SIZE=1024x768; fi
+for tool in foot xfreerdp3 "$CLIENT" grim Xwayland python3 wl-copy wl-paste xdotool; do
 	command -v $tool >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
 [ -x "$WAYRDP" ] || { echo "FAIL: $WAYRDP not built"; exit 1; }
@@ -80,6 +88,9 @@ start_mwc() {
 	chmod 700 "$dir/$name/run"
 	printf 'Mwm*HEADLESS-1*outputMode: %s\nMwm*rootBackground: %s\nMwm*keyboardLayout: de\n' \
 		"$2" "$3" >"$dir/$name/config/mwc/mwmrc"
+	if [ "$name" = a ] && [ "$OUTPUT_MANAGEMENT" = 1 ]; then
+		echo 'Mwm*outputManagement: true' >>"$dir/$name/config/mwc/mwmrc"
+	fi
 	MWC_TEST_STATE=$dir/$name.state \
 	XDG_RUNTIME_DIR=$dir/$name/run XDG_CONFIG_HOME=$dir/$name/config \
 	WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
@@ -104,7 +115,7 @@ echo "$PASSWORD" | XDG_CONFIG_HOME=$cfg "$WAYRDP" --set-password 2>/dev/null \
 [ "$(stat -c %a "$cfg/wayrdp/sam")" = 600 ] || fail "SAM file is not 0600"
 
 XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 XDG_CONFIG_HOME=$cfg \
-	${WAYRDP_WRAP:-} "$WAYRDP" -L ${WAYRDP_LOG:-debug} -k de 127.0.0.1 "$PORT" >"$dir/wayrdp.log" 2>&1 &
+	${WAYRDP_WRAP:-} "$WAYRDP" -L ${WAYRDP_LOG:-debug} -k de ${WAYRDP_OPTS:-} 127.0.0.1 "$PORT" >"$dir/wayrdp.log" 2>&1 &
 pids+=($!)
 # Long enough for a first start under valgrind (RSA key generation).
 for ((i = 0; i < 150; i++)); do
@@ -130,29 +141,38 @@ start_mwc b 1400x1000 '#000000' \
 mwc_b=${pids[-1]}
 
 for ((i = 0; i < 150; i++)); do
-	grep -q "active, 1024x768, $EXPECT_CODEC" "$dir/wayrdp.log" && break
+	grep -q "active, $SIZE, $EXPECT_CODEC" "$dir/wayrdp.log" && break
 	sleep 0.2
 done
-grep -q "active, 1024x768, $EXPECT_CODEC" "$dir/wayrdp.log" \
-	|| fail "the client never became active with 1024x768 and $EXPECT_CODEC"
+grep -q "active, $SIZE, $EXPECT_CODEC" "$dir/wayrdp.log" \
+	|| fail "the client never became active with $SIZE and $EXPECT_CODEC"
 echo "ok: $(grep -o 'active, .*' "$dir/wayrdp.log" | tail -1)"
 
-# A client that asked for another size is told 1024x768. The clients keep
-# their window at the size they asked for, so only part of the desktop shows
-# then.
+# A client that asked for another size: with output management the output
+# takes it; without, the client is told 1024x768 and keeps its window at
+# the size it asked for, so only part of the desktop shows.
 min_share=40
+w=${SIZE%x*}; h=${SIZE#*x}
 if [ "$CLIENT_SIZE" != 1024x768 ]; then
-	grep -q "desktop resized to 1024x768" "$dir/wayrdp.log" || fail "no desktop resize"
-	echo "ok: client resized from $CLIENT_SIZE to 1024x768"
-	min_share=10
+	if [ "$OUTPUT_MANAGEMENT" = 1 ]; then
+		grep -q "output follows the client: $CLIENT_SIZE" "$dir/wayrdp.log" \
+			|| fail "the output didn't take the client's size"
+		echo "ok: the output takes the client's size, $CLIENT_SIZE"
+		# A smaller desktop: the terminals cover more of it.
+		min_share=10
+	else
+		grep -q "desktop resized to 1024x768" "$dir/wayrdp.log" || fail "no desktop resize"
+		echo "ok: client resized from $CLIENT_SIZE to 1024x768"
+		min_share=10
+	fi
 fi
 
-# Frames take a moment to arrive and be drawn (longer under valgrind).
-ok=
-for ((i = 0; i < 40; i++)); do
-	sleep 0.5
-	XDG_RUNTIME_DIR=$dir/b/run WAYLAND_DISPLAY=wayland-0 grim -t ppm "$dir/b.ppm" 2>/dev/null || continue
-	share=$(python3 -I - "$dir/b.ppm" <<'PY'
+# share_magenta <mwc> <width> <height>: how much of a w x h desktop shows
+# A's magenta in a screenshot of the mwc, in percent.
+share_magenta() {
+	XDG_RUNTIME_DIR=$dir/$1/run WAYLAND_DISPLAY=wayland-0 \
+		grim -t ppm "$dir/$1.ppm" 2>/dev/null || { echo 0; return; }
+	python3 -I - "$dir/$1.ppm" "$2" "$3" <<'PY'
 import sys
 data = open(sys.argv[1], 'rb').read()
 # P6\n<w> <h>\n255\n
@@ -164,14 +184,28 @@ for i in range(0, w * h * 3, 3):
     r, g, b = px[i], px[i + 1], px[i + 2]
     if r > 200 and g < 60 and b > 200:
         n += 1
-# Of the 1024x768 desktop, minus the terminal.
-print(int(100 * n / (1024 * 768)))
+# Of the desktop, minus the terminals.
+print(int(100 * n / (int(sys.argv[2]) * int(sys.argv[3]))))
 PY
-)
-	if [ "${share:-0}" -ge $min_share ]; then ok=1; break; fi
-done
-[ "$ok" ] || fail "no magenta desktop in the client (${share:-0} %)"
-echo "ok: client shows the desktop (${share} % magenta)"
+}
+
+# expect_desktop <mwc> <width> <height> <min %>: frames take a moment to
+# arrive and be drawn (longer under valgrind).
+expect_desktop() {
+	share=0
+	for ((i = 0; i < 40; i++)); do
+		sleep 0.5
+		share=$(share_magenta "$1" "$2" "$3")
+		[ "${share:-0}" -ge "$4" ] && return 0
+	done
+	return 1
+}
+
+if expect_desktop b "$w" "$h" "$min_share"; then
+	echo "ok: client shows the desktop (${share} % magenta)"
+else
+	fail "no magenta desktop in the client (${share:-0} %)"
+fi
 
 # ---- input ---------------------------------------------------------------
 
@@ -194,7 +228,7 @@ state() {
 }
 
 VINPUT=${VINPUT:-$(dirname "$WAYRDP")/test/vinput}
-if [ "$CLIENT_SIZE" = 1024x768 ] && [ "$CLIENT" = wlfreerdp3 ] && [ -x "$VINPUT" ]; then
+if [ "$CLIENT_SIZE" = 1024x768 ] && [ "$CLIENT" != xfreerdp3 ] && [ -x "$VINPUT" ]; then
 	coproc VIN { XDG_RUNTIME_DIR=$dir/b/run WAYLAND_DISPLAY=wayland-0 \
 		"$VINPUT" 1400 1000 2>"$dir/vinput.log"; }
 	pids+=($VIN_PID)
@@ -277,15 +311,18 @@ if [ "$CLIENT_SIZE" = 1024x768 ] && [ "$CLIENT" = wlfreerdp3 ] && [ -x "$VINPUT"
 	[ "$got" = "$want" ] || fail "typed '$got', wanted '$want'"
 	echo "ok: typing arrives with the German layout: $got"
 
-	# A notch down: RDP says -120 (towards the user), Wayland +120.
-	vin wheel 1
+	# Notches down: RDP says negative (towards the user), Wayland
+	# positive. sdl-freerdp3 drops the first wheel event it sees.
+	vin wheel 3
+	sleep 0.3
+	vin wheel 3
 	for ((i = 0; i < 25; i++)); do
 		sleep 0.2
-		grep -q "Wheel vertical -120" "$dir/wayrdp.log" && break
+		grep -qE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" && break
 	done
 	if grep -q "^DEBUG" "$dir/wayrdp.log"; then
-		grep -q "Wheel vertical -120" "$dir/wayrdp.log" || fail "no wheel event"
-		echo "ok: the wheel arrives"
+		grep -qE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" || fail "no wheel event"
+		echo "ok: the wheel arrives ($(grep -oE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" | tr '\n' ' '))"
 	fi
 
 	eval "exec ${VIN[1]}>&-"
@@ -311,6 +348,8 @@ for ((i = 0; i < 50; i++)); do
 done
 [ "$(grep -c "clipboard channel open" "$dir/wayrdp.log")" -gt $n_clip ] || fail "no clipboard channel for C"
 echo "ok: C's client replaces B's"
+expect_desktop c 1024 768 40 || fail "no magenta desktop in C's client (${share:-0} %)"
+echo "ok: C's client shows the desktop (${share} % magenta)"
 
 # wl_copy <mwc> <text>, wl_paste <mwc>
 wl_copy() { XDG_RUNTIME_DIR=$dir/$1/run WAYLAND_DISPLAY=wayland-0 wl-copy -- "$2"; }
@@ -350,6 +389,13 @@ sleep 1
 	|| fail "the clipboard echoes"
 echo "ok: no clipboard echo"
 
+# The pointer image goes to the client (an arrow at least), unless it is
+# drawn into the picture (-r).
+case " ${WAYRDP_OPTS:-} " in *" -r "*) ;; *)
+grep -q "Pointer [0-9]*x[0-9]*, hotspot" "$dir/wayrdp.log" || fail "no pointer image sent"
+echo "ok: pointer image sent ($(grep -o 'Pointer [0-9]*x[0-9]*, hotspot [0-9,]*' "$dir/wayrdp.log" | sort -u | tr '\n' ';'))"
+;; esac
+
 # The output changes size in the session (mwmrc reloaded): the client follows.
 sed -i 's/outputMode: .*/outputMode: 1280x720/' "$dir/a/config/mwc/mwmrc"
 kill -HUP "${pids[0]}"
@@ -360,6 +406,37 @@ done
 grep -q "active, 1280x720, $EXPECT_CODEC" "$dir/wayrdp.log" \
 	|| fail "the client didn't follow the output to 1280x720"
 echo "ok: the client follows the output to 1280x720"
+
+# ---- the size follows the client's window (display control) ----------------
+if [ "$OUTPUT_MANAGEMENT" = 1 ]; then
+	start_mwc d 1400x1000 '#000000' \
+		"xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:901x700 /dynamic-resolution /log-level:WARN >$dir/client-d.log 2>&1"
+	for ((i = 0; i < 150; i++)); do
+		grep -q "active, 900x700" "$dir/wayrdp.log" && break
+		sleep 0.2
+	done
+	grep -q "active, 900x700" "$dir/wayrdp.log" || fail "D never became active at 900x700"
+	[ "$(state a output_HEADLESS-1 w)" = 900 ] && [ "$(state a output_HEADLESS-1 h)" = 700 ] \
+		|| fail "A's output isn't 900x700"
+	grep -q "desktop resized to 900x700" "$dir/wayrdp.log" || fail "D wasn't told the even width"
+	echo "ok: D asks for 901x700, the output and D get 900x700 (even width)"
+
+	for ((i = 0; i < 50; i++)); do
+		grep -q "display control open" "$dir/wayrdp.log" && break
+		sleep 0.2
+	done
+	grep -q "display control open" "$dir/wayrdp.log" || fail "no display control"
+	sleep 1
+	DISPLAY=$(sed -n 's/.*XWayland on DISPLAY=\(:[0-9]*\).*/\1/p' "$dir/mwc-d.log" | head -1) \
+		xdotool search --name FreeRDP windowsize 1100 800 >/dev/null 2>&1
+	for ((i = 0; i < 50; i++)); do
+		grep -q "active, 1100x800" "$dir/wayrdp.log" && break
+		sleep 0.2
+	done
+	grep -q "active, 1100x800" "$dir/wayrdp.log" || fail "the output didn't follow D's window to 1100x800"
+	[ "$(state a output_HEADLESS-1 w)" = 1100 ] || fail "A's output isn't 1100 wide"
+	echo "ok: the output follows D's window, 1100x800"
+fi
 
 # Another login takes over, as when mstsc reconnects.
 xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:"$PASSWORD" /cert:ignore \

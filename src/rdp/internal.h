@@ -33,6 +33,8 @@
 #include <freerdp/codec/rfx.h>
 #include <freerdp/codec/planar.h>
 #include <freerdp/server/cliprdr.h>
+#include <freerdp/server/disp.h>
+#include <pthread.h>
 
 #include "sys/queue.h"
 #include "rdp/server.h"
@@ -61,6 +63,8 @@ struct rdp_peer {
 	struct aml_idle* close_idle;
 
 	bool logged_on;
+	/* The connection sequence is through (PostConnect). */
+	bool connected;
 	bool activated;
 	bool suppressed;
 	bool closing;
@@ -92,6 +96,31 @@ struct rdp_peer {
 	int n_paste_fds;
 	bool paste_requested;
 	struct aml_timer* paste_timer;
+
+	/* Display control (display.c): the layout comes from FreeRDP's
+	 * channel thread, through an eventfd, and settles for a moment
+	 * before the output follows. */
+	DispServerContext* disp;
+	bool disp_tried;
+	bool disp_lock_init;
+	int disp_eventfd;
+	struct aml_handler* disp_handler;
+	struct aml_timer* disp_timer;
+	pthread_mutex_t disp_lock;
+	uint32_t disp_width, disp_height;
+
+	/* Pointer images the client has cached (cursor.c). */
+	struct {
+		uint32_t hash;
+		uint64_t used;
+	} cursor_cache[32];
+	uint32_t cursor_cache_size;
+	uint64_t cursor_tick;
+	uint32_t cursor_hash_shown;
+	bool cursor_hidden_shown;
+	/* A picture went out since the activation: only then the pointer
+	 * (wlfreerdp3 sometimes never draws if the pointer comes first). */
+	bool picture_sent;
 };
 
 LIST_HEAD(rdp_peer_list, rdp_peer);
@@ -157,6 +186,18 @@ struct rdp_server {
 
 	struct rdp_auth auth;
 	struct rdp_peer_list peers;
+	/* An output size asked for, and until when to wait for frames of
+	 * it before the client is resized to what there is. */
+	uint32_t want_width, want_height;
+	uint64_t want_until_us;
+	struct aml_timer* want_timer;
+
+	/* The pointer as it is in the session. */
+	uint8_t* cursor_pixels;
+	uint32_t cursor_width, cursor_height, cursor_hot_x, cursor_hot_y;
+	uint32_t cursor_hash;
+	bool cursor_hidden;
+
 	/* Whether the session's clipboard has text, for the next client. */
 	bool session_has_text;
 	struct rdp_fd_writer_list writers;
@@ -210,6 +251,21 @@ void rdp_clipboard_close(struct rdp_peer* self);
 void rdp_clipboard_announce(struct rdp_peer* self);
 void rdp_clipboard_paste(struct rdp_peer* self, int fd);
 void rdp_clipboard_writers_destroy(struct rdp_server* server);
+
+/* display.c */
+/* Opens the display control channel once drdynvc is ready. */
+void rdp_display_check(struct rdp_peer* self);
+void rdp_display_close(struct rdp_peer* self);
+
+/* cursor.c */
+void rdp_cursor_reset(struct rdp_peer* self);
+/* Shows the session's pointer on the client, if it changed. */
+void rdp_cursor_send(struct rdp_peer* self);
+
+/* server.c, for the peer and display control */
+/* Asks for an output size (clamped first); false if that can't be. */
+bool rdp_server_request_size(struct rdp_server* self, uint32_t width,
+		uint32_t height, uint32_t* out_width, uint32_t* out_height);
 
 /* encoder.c */
 int rdp_encoder_init(struct rdp_encoder* self);

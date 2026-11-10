@@ -13,10 +13,11 @@ design, milestones and open questions are in
 
 ## Status
 
-**M3 – clipboard.** wayrdp logs in with NLA, sends the desktop as RemoteFX
-(Planar for clients without it), takes keyboard, mouse and wheel, and shares
-the clipboard both ways with full Unicode. Next is M4: the size following
-the mstsc window, and pointer images.
+**M4 – size and pointer.** wayrdp logs in with NLA, sends the desktop as
+RemoteFX (Planar for clients without it), takes keyboard, mouse and wheel,
+shares the clipboard both ways with full Unicode, gives the output the size
+of the client's window and lets the client draw the pointer itself. What is
+left is M5: hardening, the `pam` mode, docs.
 
 Tested against xfreerdp3 and wlfreerdp3 3.32 (see Tests). **Not yet tested
 with mstsc**, which is gate 1 of the design: does Windows' Remote Desktop take
@@ -28,10 +29,10 @@ RemoteFX over surface bits smoothly?
 | M1 | Listener, peer, TLS, NLA, RemoteFX, flow control | done, mstsc test open |
 | M2 | Keyboard, mouse, wheel, Synchronize, Unicode | done, mstsc test open |
 | M3 | Clipboard in both directions | done, mstsc test open |
-| M4 | Size follows the mstsc window, pointer images | |
+| M4 | Size follows the mstsc window, pointer images | done, mstsc test open |
 | M5 | Hardening, `pam` mode, docs; replaces xrdp and wayvnc | |
 
-What M1 to M3 do:
+What M1 to M4 do:
 
 - **Login:** NLA (CredSSP/NTLM) against `~/.config/wayrdp/sam`, written by
   `wayrdp --set-password`. Only the user wayrdp runs as gets in. Three failed
@@ -42,10 +43,28 @@ What M1 to M3 do:
 - **One session:** a new login replaces the old connection; a failed one
   throws no one out. The capture runs only while a client looks (not while
   mstsc is minimised).
-- **Size:** the desktop has the size of mwc's output (`outputMode` in mwmrc).
-  A client that asks for another size is told that one; when the output
-  changes size, the client follows. The size following the mstsc window is
-  M4.
+- **Size:** with `Mwm*outputManagement: true` in mwmrc the output takes the
+  size the client asks for when it connects, and follows its window
+  afterwards (display control, the `disp` channel: mstsc sends a new layout
+  whenever its window changes; wayrdp waits 200 ms for it to settle). Sizes
+  are kept within 200–8192 a side, the width even, at most 8192×4320
+  pixels; the client is told when its size had to change. Without output
+  management (or if mwc refuses a size) the client gets the output's size
+  (`outputMode`) instead, as before.
+  **Only wayrdp may use wlr-output-management**: wlroots 0.19 and 0.20
+  abort in `head_send_state` when a second client of it (wlr-randr, kanshi,
+  wdisplays) is around, and take the whole mwc session with them (fixed
+  only on wlroots master, 40640950). That is why mwc offers the protocol
+  only when asked.
+- **Pointer:** the pointer image comes from ext-image-copy-capture's cursor
+  session and goes to the client as a 32-bit color pointer with alpha
+  (large pointers up to 384×384 where the client takes them); the client
+  draws it at its own mouse position, without the delay of a round trip.
+  Images the client has seen come from its pointer cache. `-r` draws the
+  pointer into the picture instead, and so does wayrdp when the compositor
+  has no cursor session. Don't mix the two: after a capture with the pointer
+  drawn in (`grim -c`, `screenShot -p`), wlroots sends no pointer images
+  until the image changes.
 - **Picture:** RemoteFX in 64×64 tiles, only the damaged ones, encoded in a
   worker thread; at most two frames unacknowledged (clients that never
   acknowledge are detected and served without waiting).
@@ -103,7 +122,7 @@ MWC=/path/to/mwc test/mwc-rdp.sh        # M1: end to end with xfreerdp3
 terminals, serves it with wayrdp, and checks:
 
 - NLA with the right and a wrong password (`xfreerdp3 +auth-only`)
-- a second mwc runs wlfreerdp3, and a screenshot of it shows the magenta
+- a second mwc runs sdl-freerdp3, and a screenshot of it shows the magenta
   desktop
 - `build/test/vinput` moves and clicks in the second mwc, and types physical
   keys there: A's pointer lands on the pixel, the click focuses a terminal in
@@ -113,12 +132,19 @@ terminals, serves it with wayrdp, and checks:
   side, `wl-paste` on the other, both ways, with umlauts, emoji, CJK and
   several lines, and no echo (wlfreerdp3's clipboard turns text into
   `\u` escapes, so it is xfreerdp3 here)
+- a pointer image goes out
+- a fourth mwc runs `xfreerdp3 /dynamic-resolution` asking for 901×700: the
+  output and the client get 900×700; `xdotool windowsize` makes the
+  client's window 1100×800 and the output follows
 - the client follows when the output changes size
 - a second login replaces the session
 - three wrong passwords lock the next connection out
 
-Variants: `CLIENT=xfreerdp3` (through Xwayland; picture only, it passes the
-pointer on once and then no more), `CLIENT_SIZE=800x600` (the client is
+Variants: `OUTPUT_MANAGEMENT=0` (mwc without it: the client gets the
+output's size), `WAYRDP_OPTS=-r` (pointer in the picture),
+`CLIENT=xfreerdp3` (through Xwayland; no input part, it passes the
+pointer on once and then no more), `CLIENT=wlfreerdp3` (deprecated; it now
+and then hangs once pointer images come), `CLIENT_SIZE=800x600` (the client is
 resized to the output),
 `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the fallback; xfreerdp3 always
 offers RemoteFX), `WAYRDP_WRAP="valgrind --log-file=…"`.
@@ -131,7 +157,9 @@ MWC_VIRTUAL_INPUT=1 WLR_BACKENDS=headless WLR_RENDERER=pixman mwc &
 wayrdp -k de -o HEADLESS-1 127.0.0.1 3390
 ```
 
-mwc must run with `MWC_VIRTUAL_INPUT=1`. As a user service next to mwc:
+mwc must run with `MWC_VIRTUAL_INPUT=1`, and for the size to follow the
+mstsc window with `Mwm*outputManagement: true` in `~/.config/mwc/mwmrc`
+(read at mwc's start). As a user service next to mwc:
 [contrib/wayrdp.service](contrib/wayrdp.service), on port 3390 while xrdp
 still has 3389.
 
