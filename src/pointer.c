@@ -14,7 +14,9 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+
 #include <stdint.h>
+#include <stdlib.h>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
 #include <linux/input-event-codes.h>
@@ -22,12 +24,17 @@
 #include "pointer.h"
 #include "wlr-virtual-pointer-unstable-v1.h"
 #include "time-util.h"
-#include "image-source.h"
+
+/* A notch of a mouse wheel scrolls 15 in Wayland's units, as wev shows for a
+ * real one (wayvnc's number). */
+#define AXIS_STEP_PER_NOTCH 15
 
 int pointer_init(struct pointer* self)
 {
 	zwlr_virtual_pointer_v1_axis_source(self->pointer,
 					    WL_POINTER_AXIS_SOURCE_WHEEL);
+	self->current_x = -1;
+	self->current_y = -1;
 	return 0;
 }
 
@@ -36,70 +43,55 @@ void pointer_destroy(struct pointer* self)
 	zwlr_virtual_pointer_v1_destroy(self->pointer);
 }
 
-static void pointer_set_button_mask(struct pointer* self, uint32_t t,
-				    enum nvnc_button_mask mask)
+void pointer_motion(struct pointer* self, double x, double y)
 {
-	enum nvnc_button_mask diff = self->current_mask ^ mask;
+	if (x == self->current_x && y == self->current_y)
+		return;
 
-	if (diff & NVNC_BUTTON_LEFT)
-		zwlr_virtual_pointer_v1_button(self->pointer, t, BTN_LEFT,
-					       !!(mask & NVNC_BUTTON_LEFT));
-	if (diff & NVNC_BUTTON_MIDDLE)
-		zwlr_virtual_pointer_v1_button(self->pointer, t, BTN_MIDDLE,
-					       !!(mask & NVNC_BUTTON_MIDDLE));
-	if (diff & NVNC_BUTTON_RIGHT)
-		zwlr_virtual_pointer_v1_button(self->pointer, t, BTN_RIGHT,
-					       !!(mask & NVNC_BUTTON_RIGHT));
+	if (x < 0) x = 0;
+	if (x > 1) x = 1;
+	if (y < 0) y = 0;
+	if (y > 1) y = 1;
 
-	if (diff & NVNC_BUTTON_BACK)
-		zwlr_virtual_pointer_v1_button(self->pointer, t, BTN_BACK,
-					       !!(mask & NVNC_BUTTON_BACK));
-
-	if (diff & NVNC_BUTTON_FORWARD)
-		zwlr_virtual_pointer_v1_button(self->pointer, t, BTN_FORWARD,
-					       !!(mask & NVNC_BUTTON_FORWARD));
-
-	int vaxis = WL_POINTER_AXIS_VERTICAL_SCROLL;
-	int haxis = WL_POINTER_AXIS_HORIZONTAL_SCROLL;
-
-	/* I arrived at the magical value of 15 by connecting a mouse with a
-	 * scroll wheel and viewing the output of wev.
-	 */
-
-	if ((diff & NVNC_SCROLL_UP) && !(mask & NVNC_SCROLL_UP))
-		zwlr_virtual_pointer_v1_axis_discrete(self->pointer, t, vaxis,
-				wl_fixed_from_int(-15), -1);
-
-	if ((diff & NVNC_SCROLL_DOWN) && !(mask & NVNC_SCROLL_DOWN))
-		zwlr_virtual_pointer_v1_axis_discrete(self->pointer, t, vaxis,
-				wl_fixed_from_int(15), 1);
-
-	if ((diff & NVNC_SCROLL_LEFT) && !(mask & NVNC_SCROLL_LEFT))
-		zwlr_virtual_pointer_v1_axis_discrete(self->pointer, t, haxis,
-				wl_fixed_from_int(-15), -1);
-
-	if ((diff & NVNC_SCROLL_RIGHT) && !(mask & NVNC_SCROLL_RIGHT))
-		zwlr_virtual_pointer_v1_axis_discrete(self->pointer, t, haxis,
-				wl_fixed_from_int(15), 1);
-
-	self->current_mask = mask;
-}
-
-void pointer_set(struct pointer* self, double x, double y,
-		 enum nvnc_button_mask button_mask)
-{
-	uint32_t t = gettime_ms();
-
-	if (x != self->current_x || y != self->current_y)
-		zwlr_virtual_pointer_v1_motion_absolute(self->pointer, t,
-				x * INT32_MAX, y * INT32_MAX,
-				INT32_MAX, INT32_MAX);
+	zwlr_virtual_pointer_v1_motion_absolute(self->pointer, gettime_ms(),
+			x * UINT32_MAX, y * UINT32_MAX, UINT32_MAX, UINT32_MAX);
 
 	self->current_x = x;
 	self->current_y = y;
+}
 
-	if (button_mask != self->current_mask)
-		pointer_set_button_mask(self, t, button_mask);
+void pointer_button(struct pointer* self, uint32_t code, bool is_pressed)
+{
+	zwlr_virtual_pointer_v1_button(self->pointer, gettime_ms(), code,
+			is_pressed ? WL_POINTER_BUTTON_STATE_PRESSED
+			           : WL_POINTER_BUTTON_STATE_RELEASED);
+}
 
+void pointer_axis(struct pointer* self, enum pointer_axis axis,
+		int32_t value120)
+{
+	uint32_t t = gettime_ms();
+	uint32_t wl_axis = axis == POINTER_AXIS_VERTICAL
+		? WL_POINTER_AXIS_VERTICAL_SCROLL
+		: WL_POINTER_AXIS_HORIZONTAL_SCROLL;
+
+	int32_t total = self->axis_remainder[axis] + value120;
+	int32_t notches = total / 120;
+	self->axis_remainder[axis] = total % 120;
+
+	/* The value always follows the wheel; the notch count only goes with
+	 * it once a whole notch is full, so high-resolution wheels don't
+	 * scroll twice. */
+	wl_fixed_t value = wl_fixed_from_double(
+			value120 * AXIS_STEP_PER_NOTCH / 120.0);
+	if (notches != 0)
+		zwlr_virtual_pointer_v1_axis_discrete(self->pointer, t, wl_axis,
+				value, notches);
+	else if (value120 != 0)
+		zwlr_virtual_pointer_v1_axis(self->pointer, t, wl_axis, value);
+}
+
+void pointer_frame(struct pointer* self)
+{
 	zwlr_virtual_pointer_v1_frame(self->pointer);
 }

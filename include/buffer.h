@@ -26,12 +26,12 @@
 #include <pixman.h>
 #include <sys/types.h>
 #include <stdatomic.h>
+#include <wayland-client-protocol.h>
 
 struct wl_buffer;
 struct gbm_bo;
 struct gbm_device;
-struct nvnc_frame;
-struct nvnc_buffer;
+struct wv_buffer_pool;
 
 enum wv_buffer_type {
 	WV_BUFFER_UNSPEC = 0,
@@ -53,9 +53,19 @@ struct wv_buffer {
 	enum wv_buffer_type type;
 	LIST_ENTRY(wv_buffer) link;
 
-	struct nvnc_frame* nvnc_frame;
-	struct nvnc_buffer* buffer;
+	/* Held by whoever has the buffer: the capture, a pending frame, the
+	 * encoder. At zero it goes back to its pool, or is destroyed if the
+	 * pool is gone or was reconfigured meanwhile. */
+	int ref;
+	bool in_use;
+	struct wv_buffer_pool* pool;
+
 	struct wl_buffer* wl_buffer;
+
+	/* Presentation time in µs and the transform of the content, set by
+	 * the capture. */
+	uint64_t pts;
+	enum wl_output_transform transform;
 
 	void* pixels;
 	size_t size;
@@ -98,7 +108,7 @@ struct wv_buffer_config {
 };
 
 struct wv_buffer_pool {
-	struct nvnc_buffer_pool* nvnc_pool;
+	/* Every buffer made with the current config, in use or not. */
 	struct wv_buffer_list list;
 	struct wv_buffer_config config;
 #ifdef ENABLE_SCREENCOPY_DMABUF
@@ -113,6 +123,9 @@ void wv_buffer_damage_rect(struct wv_buffer* self, int x, int y, int width,
 void wv_buffer_damage_whole(struct wv_buffer* self);
 void wv_buffer_damage_clear(struct wv_buffer* self);
 
+/* Takes another reference, e.g. for the encoder. */
+struct wv_buffer* wv_buffer_ref(struct wv_buffer* self);
+/* Drops one. The last one returns the buffer to its pool. */
 void wv_buffer_release(struct wv_buffer* self);
 
 struct wv_buffer_pool* wv_buffer_pool_create(

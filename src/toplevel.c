@@ -22,7 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <neatvnc.h>
+#include "log.h"
 
 struct toplevel* toplevel_from_image_source(const struct image_source* source)
 {
@@ -69,7 +69,7 @@ static void handle_done(void* data,
 		struct ext_foreign_toplevel_handle_v1* handle)
 {
 	struct toplevel* self = data;
-	nvnc_trace("Added toplevel: %s, app_id: %s, title: %s",
+	wv_trace("Added toplevel: %s, app_id: %s, title: %s",
 			self->identifier, self->app_id, self->title);
 }
 

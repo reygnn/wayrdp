@@ -24,15 +24,15 @@
 #include <unistd.h>
 #include <assert.h>
 #include <aml.h>
-#include <neatvnc.h>
+#include "log.h"
 
 #include "data-control.h"
 #include "vec.h"
 
-static const char custom_mime_type_data[] = "wayvnc";
+static const char custom_mime_type_data[] = "wayrdp";
 
 struct receive_context {
-	struct nvnc* server;
+	struct data_control* data_control;
 	struct aml_handler* handler;
 	LIST_ENTRY(receive_context) link;
 	int fd;
@@ -81,7 +81,7 @@ static void on_receive(struct aml_handler* handler)
 	if (ret == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK)
 			return;
-		nvnc_log(NVNC_LOG_ERROR, "Clipboard read failed: %m");
+		wv_log(WV_LOG_ERROR, "Clipboard read failed: %m");
 		destroy_receive_context(ctx);
 	} else if (ret > 0) {
 		wv_vec_append(&ctx->buffer, buf, ret);
@@ -89,8 +89,9 @@ static void on_receive(struct aml_handler* handler)
 	}
 
 	if (ctx->buffer.len != 0)
-		nvnc_send_cut_text(ctx->server, ctx->buffer.data,
-				ctx->buffer.len);
+		ctx->data_control->on_selection_text(
+				ctx->data_control->userdata,
+				ctx->buffer.data, ctx->buffer.len);
 	wv_vec_clear(&ctx->buffer);
 
 	destroy_receive_context(ctx);
@@ -107,7 +108,7 @@ static void on_send(struct aml_handler* handler)
 	if (ret == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK)
 			return;
-		nvnc_log(NVNC_LOG_ERROR, "Clipboard write failed/incomplete: %m");
+		wv_log(WV_LOG_ERROR, "Clipboard write failed/incomplete: %m");
 		destroy_send_context(ctx);
 	} else if (ret == (int)(ctx->length - ctx->index)) {
 		destroy_send_context(ctx);
@@ -127,18 +128,18 @@ static int dont_block(int fd)
 static struct receive_context* receive_data_init(int pipe_fd[])
 {
 	if (pipe(pipe_fd) == -1) {
-		nvnc_log(NVNC_LOG_ERROR, "pipe() failed: %m");
+		wv_log(WV_LOG_ERROR, "pipe() failed: %m");
 		return NULL;
 	}
 
 	if (dont_block(pipe_fd[0]) == -1) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to set O_NONBLOCK on clipbooard receive fd");
+		wv_log(WV_LOG_ERROR, "Failed to set O_NONBLOCK on clipbooard receive fd");
 		goto failure;
 	}
 
 	struct receive_context* ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+		wv_log(WV_LOG_ERROR, "OOM: %m");
 		goto failure;
 	}
 
@@ -155,9 +156,9 @@ static void receive_data_finish(struct data_control* self,
 	close(pipe_fd[1]);
 
 	ctx->fd = pipe_fd[0];
-	ctx->server = self->server;
+	ctx->data_control = self;
 	if (wv_vec_init(&ctx->buffer, 4096) < 0) {
-		nvnc_log(NVNC_LOG_ERROR, "open_memstream() failed: %m");
+		wv_log(WV_LOG_ERROR, "open_memstream() failed: %m");
 		goto open_memstream_failure;
 	}
 
@@ -308,7 +309,7 @@ static void data_control_source_send_common(void* data,
 	}
 
 	if (dont_block(fd) == -1) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to set O_NONBLOCK on clipbooard send fd");
+		wv_log(WV_LOG_ERROR, "Failed to set O_NONBLOCK on clipbooard send fd");
 		close(fd);
 		return;
 	}
@@ -318,7 +319,7 @@ static void data_control_source_send_common(void* data,
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = 0;
 		} else {
-			nvnc_log(NVNC_LOG_ERROR, "Clipboard write failed: %m");
+			wv_log(WV_LOG_ERROR, "Clipboard write failed: %m");
 			close(fd);
 			return;
 		}
@@ -331,7 +332,7 @@ static void data_control_source_send_common(void* data,
 
 	struct send_context* ctx = calloc(1, sizeof(*ctx));
 	if (!ctx) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+		wv_log(WV_LOG_ERROR, "OOM: %m");
 		goto ctx_alloc_failure;
 		return;
 	}
@@ -341,7 +342,7 @@ static void data_control_source_send_common(void* data,
 	ctx->index = 0;
 	ctx->data = malloc(ctx->length);
 	if (!ctx->data) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+		wv_log(WV_LOG_ERROR, "OOM: %m");
 		goto ctx_data_alloc_failure;
 	}
 	memcpy(ctx->data, d + ret, ctx->length);
@@ -366,7 +367,7 @@ ctx_data_alloc_failure:
 	free(ctx);
 ctx_alloc_failure:
 	close(fd);
-	nvnc_log(NVNC_LOG_ERROR, "Clipboard write incomplete");
+	wv_log(WV_LOG_ERROR, "Clipboard write incomplete");
 }
 
 static void data_control_source_send_wlr(void* data,
@@ -402,7 +403,7 @@ static struct zwlr_data_control_source_v1* set_selection_wlr(
 	selection = zwlr_data_control_manager_v1_create_data_source(
 			self->wlr_manager);
 	if (selection == NULL) {
-		nvnc_log(NVNC_LOG_ERROR, "zwlr_data_control_manager_v1_create_data_source() failed");
+		wv_log(WV_LOG_ERROR, "zwlr_data_control_manager_v1_create_data_source() failed");
 		free(self->cb_data);
 		self->cb_data = NULL;
 		return NULL;
@@ -567,7 +568,7 @@ static struct ext_data_control_source_v1* set_selection_ext(
 	selection = ext_data_control_manager_v1_create_data_source(
 			self->ext_manager);
 	if (selection == NULL) {
-		nvnc_log(NVNC_LOG_ERROR, "ext_data_control_manager_v1_create_data_source() failed");
+		wv_log(WV_LOG_ERROR, "ext_data_control_manager_v1_create_data_source() failed");
 		free(self->cb_data);
 		self->cb_data = NULL;
 		return NULL;
@@ -588,10 +589,12 @@ static struct ext_data_control_source_v1* set_selection_ext(
 	return selection;
 }
 
-void data_control_init(struct data_control* self, struct nvnc* server,
-		struct wl_seat* seat)
+void data_control_init(struct data_control* self, struct wl_seat* seat,
+		void (*on_selection_text)(void*, const char*, size_t),
+		void* userdata)
 {
-	self->server = server;
+	self->on_selection_text = on_selection_text;
+	self->userdata = userdata;
 	LIST_INIT(&self->receive_contexts);
 	LIST_INIT(&self->send_contexts);
 
@@ -606,7 +609,7 @@ void data_control_init(struct data_control* self, struct nvnc* server,
 		ext_data_control_device_v1_add_listener(self->ext.device,
 				&data_control_device_listener_ext, self);
 	} else {
-		nvnc_log(NVNC_LOG_PANIC, "No data control manager available");
+		wv_log(WV_LOG_PANIC, "No data control manager available");
 	}
 
 	self->ext.selection = NULL;
@@ -618,7 +621,7 @@ void data_control_init(struct data_control* self, struct nvnc* server,
 	self->mime_type = "text/plain;charset=utf-8";
 	snprintf(self->custom_mime_type_name,
 			sizeof(self->custom_mime_type_name),
-			"x-wayvnc-client-%08x", (unsigned int)rand());
+			"x-wayrdp-client-%08x", (unsigned int)rand());
 }
 
 void data_control_destroy(struct data_control* self)
@@ -626,7 +629,7 @@ void data_control_destroy(struct data_control* self)
 	while (!LIST_EMPTY(&self->receive_contexts))
 		destroy_receive_context(LIST_FIRST(&self->receive_contexts));
 	while (!LIST_EMPTY(&self->send_contexts)) {
-		nvnc_log(NVNC_LOG_ERROR, "Clipboard write incomplete due to client disconnection");
+		wv_log(WV_LOG_ERROR, "Clipboard write incomplete due to client disconnection");
 		destroy_send_context(LIST_FIRST(&self->send_contexts));
 	}
 	if (self->wlr_manager) {
@@ -658,14 +661,14 @@ void data_control_destroy(struct data_control* self)
 void data_control_to_clipboard(struct data_control* self, const char* text, size_t len)
 {
 	if (!len) {
-		nvnc_log(NVNC_LOG_DEBUG, "Ignoring empty clipboard from VNC client");
+		wv_log(WV_LOG_DEBUG, "Ignoring empty clipboard from VNC client");
 		return;
 	}
 	free(self->cb_data);
 
 	self->cb_data = malloc(len);
 	if (!self->cb_data) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+		wv_log(WV_LOG_ERROR, "OOM: %m");
 		return;
 	}
 

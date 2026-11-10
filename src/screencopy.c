@@ -22,7 +22,7 @@
 #include <wayland-client.h>
 #include <libdrm/drm_fourcc.h>
 #include <aml.h>
-#include <neatvnc.h>
+#include "log.h"
 
 #include "wlr-screencopy-unstable-v1.h"
 #include "buffer.h"
@@ -205,7 +205,7 @@ static void screencopy_ready(void* data,
 	uint64_t sec = (uint64_t)sec_hi << 32 | (uint64_t)sec_lo;
 	uint64_t pts = sec * UINT64_C(1000000) + (uint64_t)nsec / UINT64_C(1000);
 
-	DTRACE_PROBE2(wayvnc, screencopy_ready, self, pts);
+	DTRACE_PROBE2(wayrdp, screencopy_ready, self, pts);
 
 	screencopy__stop(self);
 
@@ -217,7 +217,7 @@ static void screencopy_ready(void* data,
 	self->back = self->front;
 	self->front = NULL;
 
-	nvnc_frame_set_pts(self->back->nvnc_frame, pts);
+	self->back->pts = pts;
 
 	self->status = WLR_SCREENCOPY_DONE;
 	self->parent.on_done(SCREENCOPY_DONE, self->back,
@@ -231,7 +231,7 @@ static void screencopy_failed(void* data,
 {
 	struct wlr_screencopy* self = data;
 
-	DTRACE_PROBE1(wayvnc, screencopy_failed, self);
+	DTRACE_PROBE1(wayrdp, screencopy_failed, self);
 
 	screencopy__stop(self);
 
@@ -251,14 +251,14 @@ static void screencopy_damage(void* data,
 {
 	struct wlr_screencopy* self = data;
 
-	DTRACE_PROBE1(wayvnc, screencopy_damage, self);
+	DTRACE_PROBE1(wayrdp, screencopy_damage, self);
 
 	wv_buffer_damage_rect(self->front, x, y, width, height);
 }
 
 static int screencopy__start_capture(struct wlr_screencopy* self, uint64_t now)
 {
-	DTRACE_PROBE1(wayvnc, screencopy_start, self);
+	DTRACE_PROBE1(wayrdp, screencopy_start, self);
 
 	static const struct zwlr_screencopy_frame_v1_listener frame_listener = {
 		.buffer = screencopy_buffer,
@@ -318,7 +318,7 @@ static struct screencopy* wlr_screencopy_create(struct image_source* source,
 		bool render_cursor)
 {
 	if (!image_source_is_output(source)) {
-		nvnc_log(NVNC_LOG_ERROR, "Missing features for non-output capture");
+		wv_log(WV_LOG_ERROR, "Missing features for non-output capture");
 		return NULL;
 	}
 

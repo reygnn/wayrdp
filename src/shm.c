@@ -48,7 +48,7 @@ static void randname(char *buf)
 static int create_shm_file(void)
 {
 #ifdef HAVE_MEMFD
-	return memfd_create("wayvnc-shm", 0);
+	return memfd_create("wayrdp-shm", 0);
 #elif defined(__FreeBSD__)
 	// memfd_create added in FreeBSD 13, but SHM_ANON has been supported for ages
 	return shm_open(SHM_ANON, O_RDWR | O_CREAT | O_EXCL, 0600);

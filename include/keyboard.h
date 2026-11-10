@@ -19,13 +19,11 @@
 #include <stdlib.h>
 #include <xkbcommon/xkbcommon.h>
 #include <stdbool.h>
-#include <neatvnc.h>
 
 #include "intset.h"
 
 struct zwp_virtual_keyboard_v1;
 struct table_entry;
-struct nvnc;
 
 struct keyboard {
 	struct zwp_virtual_keyboard_v1* virtual_keyboard;
@@ -48,4 +46,10 @@ void keyboard_destroy(struct keyboard* self);
 void keyboard_feed(struct keyboard* self, xkb_keysym_t symbol, bool is_pressed);
 void keyboard_feed_code(struct keyboard* self, xkb_keycode_t code,
 		bool is_pressed);
-enum nvnc_keyboard_led_state keyboard_get_led_state(const struct keyboard*);
+enum keyboard_led_state {
+	KEYBOARD_LED_SCROLL_LOCK = 1 << 0,
+	KEYBOARD_LED_NUM_LOCK = 1 << 1,
+	KEYBOARD_LED_CAPS_LOCK = 1 << 2,
+};
+
+enum keyboard_led_state keyboard_get_led_state(const struct keyboard*);

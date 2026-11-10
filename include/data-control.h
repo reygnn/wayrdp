@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <neatvnc.h>
+#include <stddef.h>
 
 #include "wlr-data-control-unstable-v1.h"
 #include "ext-data-control-v1.h"
@@ -31,7 +31,9 @@ LIST_HEAD(send_context_list, send_context);
 
 struct data_control {
 	struct wl_display* wl_display;
-	struct nvnc* server;
+	/* Where text copied in the session goes, e.g. to the RDP client. */
+	void (*on_selection_text)(void* userdata, const char* text, size_t len);
+	void* userdata;
 	struct receive_context_list receive_contexts;
 	struct send_context_list send_contexts;
 	struct zwlr_data_control_manager_v1* wlr_manager;
@@ -52,12 +54,14 @@ struct data_control {
 	};
 	bool is_own_offer;
 	const char* mime_type;
-	/* x-wayvnc-client-(8 hexadecimal digits) + \0 */
+	/* x-wayrdp-client-(8 hexadecimal digits) + \0 */
 	char custom_mime_type_name[32];
 	char* cb_data;
 	size_t cb_len;
 };
 
-void data_control_init(struct data_control* self, struct nvnc* server, struct wl_seat* seat);
+void data_control_init(struct data_control* self, struct wl_seat* seat,
+		void (*on_selection_text)(void*, const char*, size_t),
+		void* userdata);
 void data_control_destroy(struct data_control* self);
 void data_control_to_clipboard(struct data_control* self, const char* text, size_t len);

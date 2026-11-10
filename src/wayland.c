@@ -22,7 +22,8 @@
 
 #include <aml.h>
 #include <errno.h>
-#include <neatvnc.h>
+#include <assert.h>
+#include "log.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -157,7 +158,7 @@ static void registry_add(void* data, struct wl_registry* registry,
 
 	if (strcmp(interface, wl_output_interface.name) == 0 &&
 			version >= 3) {
-		nvnc_trace("Registering new output %u", id);
+		wv_trace("Registering new output %u", id);
 		struct wl_output* wl_output =
 			wl_registry_bind(registry, id, &wl_output_interface, 3);
 		if (!wl_output)
@@ -179,13 +180,13 @@ static void registry_add(void* data, struct wl_registry* registry,
 	}
 
 	if (CHECK_BIND(zxdg_output_manager_v1, 3)) {
-		nvnc_trace("Registering new xdg_output_manager");
+		wv_trace("Registering new xdg_output_manager");
 		output_setup_xdg_output_managers(self, &self->outputs);
 		return;
 	}
 
 	if (CHECK_BIND(zwlr_output_power_manager_v1, 1)) {
-		nvnc_trace("Registering new wlr_output_power_manager");
+		wv_trace("Registering new wlr_output_power_manager");
 		return;
 	}
 
@@ -208,7 +209,7 @@ static void registry_add(void* data, struct wl_registry* registry,
 	// TODO: Move output manager global into this
 	if (strcmp(interface, zwlr_output_manager_v1_interface.name) == 0
 			&& version >= 3) {
-		nvnc_trace("Registering new wlr_output_manager");
+		wv_trace("Registering new wlr_output_manager");
 		struct zwlr_output_manager_v1* wlr_output_manager =
 			wl_registry_bind(registry, id,
 				&zwlr_output_manager_v1_interface, 3);
@@ -240,7 +241,7 @@ static void registry_remove(void* data, struct wl_registry* registry,
 
 	struct seat* seat = seat_find_by_id(&self->seats, id);
 	if (seat) {
-		nvnc_log(NVNC_LOG_INFO, "Seat %s went away", seat->name);
+		wv_log(WV_LOG_INFO, "Seat %s went away", seat->name);
 		observable_notify(&self->observable.seat_removed, seat);
 		wl_list_remove(&seat->link);
 		seat_destroy(seat);
@@ -257,16 +258,16 @@ static void on_wayland_event(struct aml_handler* handler)
 
 	if (wl_display_read_events(self->display) < 0) {
 		if (errno == EPIPE || errno == ECONNRESET) {
-			nvnc_log(NVNC_LOG_DEBUG, "Compositor has gone away.");
+			wv_log(WV_LOG_DEBUG, "Compositor has gone away.");
 			wayland_destroy(self);
 			return;
 		} else {
-			nvnc_log(NVNC_LOG_ERROR, "Failed to read wayland events: %m");
+			wv_log(WV_LOG_ERROR, "Failed to read wayland events: %m");
 		}
 	}
 
 	if (wl_display_dispatch_pending(self->display) < 0) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to dispatch pending");
+		wv_log(WV_LOG_ERROR, "Failed to dispatch pending");
 		wayland_destroy(self);
 	}
 }
@@ -293,17 +294,17 @@ struct wayland* wayland_connect(const char* display, enum wayland_flags flags)
 		const char* display_name = display ? display:
 			getenv("WAYLAND_DISPLAY");
 		if (!display_name) {
-			nvnc_log(NVNC_LOG_ERROR,"WAYLAND_DISPLAY is not set in the environment");
+			wv_log(WV_LOG_ERROR,"WAYLAND_DISPLAY is not set in the environment");
 		} else {
-			nvnc_log(NVNC_LOG_ERROR, "Failed to connect to WAYLAND_DISPLAY=\"%s\"", display_name);
-			nvnc_log(NVNC_LOG_ERROR, "Ensure wayland is running with that display name");
+			wv_log(WV_LOG_ERROR, "Failed to connect to WAYLAND_DISPLAY=\"%s\"", display_name);
+			wv_log(WV_LOG_ERROR, "Ensure wayland is running with that display name");
 		}
 		goto connect_failure;
 	}
 
 	self->registry = wl_display_get_registry(self->display);
 	if (!self->registry) {
-		nvnc_log(NVNC_LOG_ERROR, "Could not locate the wayland compositor object registry");
+		wv_log(WV_LOG_ERROR, "Could not locate the wayland compositor object registry");
 		goto registry_failure;
 	}
 

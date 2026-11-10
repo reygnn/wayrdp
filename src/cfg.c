@@ -32,7 +32,7 @@ static char* cfg__get_default_path(void)
 
 	char* xdg_config_home = getenv("XDG_CONFIG_HOME");
 	if (xdg_config_home) {
-		snprintf(result, sizeof(result), "%s/wayvnc/config",
+		snprintf(result, sizeof(result), "%s/wayrdp/config",
 		         xdg_config_home);
 		result[sizeof(result) - 1] = '\0';
 		return result;
@@ -42,7 +42,7 @@ static char* cfg__get_default_path(void)
 	if (!home)
 		return NULL;
 
-	snprintf(result, sizeof(result), "%s/.config/wayvnc/config", home);
+	snprintf(result, sizeof(result), "%s/.config/wayrdp/config", home);
 	result[sizeof(result) - 1] = '\0';
 	return result;
 }

@@ -1,8 +1,8 @@
 project(
-	'wayvnc',
+	'wayrdp',
 	'c',
-	version: '0.10.2',
 	license: 'ISC',
+	meson_version: '>=0.58.0',
 	default_options: [
 		'c_std=gnu11',
 		'warning_level=2',
@@ -21,22 +21,6 @@ c_args = [
 	'-Wno-missing-field-initializers',
 ]
 
-version = '"@0@"'.format(meson.project_version())
-git = find_program('git', native: true, required: false)
-if git.found()
-	git_commit = run_command([git, 'rev-parse', '--short', 'HEAD'], check: false)
-	git_branch = run_command([git, 'rev-parse', '--abbrev-ref', 'HEAD'], check: false)
-	if git_commit.returncode() == 0 and git_branch.returncode() == 0
-		version = '"v@0@-@1@ (@2@)"'.format(
-			meson.project_version(),
-			git_commit.stdout().strip(),
-			git_branch.stdout().strip(),
-		)
-	endif
-endif
-
-add_project_arguments('-DPROJECT_VERSION=@0@'.format(version), language: 'c')
-
 if buildtype != 'debug' and buildtype != 'debugoptimized'
 	c_args += '-DNDEBUG'
 endif
@@ -47,35 +31,30 @@ cc = meson.get_compiler('c')
 
 libm = cc.find_library('m', required: false)
 librt = cc.find_library('rt', required: false)
-libpam = cc.find_library('pam', required: get_option('pam'))
-
 pixman = dependency('pixman-1')
 gbm = dependency('gbm', required: get_option('screencopy-dmabuf'))
 drm = dependency('libdrm')
 xkbcommon = dependency('xkbcommon', version: '>=1.0.0')
 wayland_client = dependency('wayland-client')
-jansson = dependency('jansson')
+
+# FreeRDP 3.24 is the oldest that Ubuntu 26.04 still has on some
+# architectures (see docs/wayrdp-Entwurf.md).
+freerdp_version = '>=3.24.0'
+# As system headers: they warn about their own deprecated declarations.
+freerdp = dependency('freerdp3', version: freerdp_version,
+	include_type: 'system')
+freerdp_server = dependency('freerdp-server3', version: freerdp_version,
+	include_type: 'system')
+winpr = dependency('winpr3', version: freerdp_version,
+	include_type: 'system')
 
 aml_version = ['>=1.0.0', '<2.0.0']
-neatvnc_version = ['>=1.0.0', '<2.0.0']
-
-neatvnc_project = subproject(
-	'neatvnc',
-	required: false,
-	version: neatvnc_version,
-)
-
-aml_project = subproject('aml', required: false, version: aml_version)
+aml_project = subproject('aml', required: false, version: aml_version,
+	default_options: ['default_library=static'])
 if aml_project.found()
 	aml = aml_project.get_variable('aml_dep')
 else
 	aml = dependency('aml1', version: aml_version)
-endif
-
-if neatvnc_project.found()
-	neatvnc = neatvnc_project.get_variable('neatvnc_dep')
-else
-	neatvnc = dependency('neatvnc', version: neatvnc_version)
 endif
 
 inc = include_directories('include')
@@ -84,6 +63,7 @@ subdir('protocols')
 
 sources = [
 	'src/main.c',
+	'src/log.c',
 	'src/strlcpy.c',
 	'src/shm.c',
 	'src/screencopy.c',
@@ -101,9 +81,6 @@ sources = [
 	'src/pixels.c',
 	'src/transform-util.c',
 	'src/util.c',
-	'src/json-ipc.c',
-	'src/ctl-server.c',
-	'src/ctl-commands.c',
 	'src/option-parser.c',
 	'src/table-printer.c',
 	'src/image-source.c',
@@ -111,6 +88,7 @@ sources = [
 	'src/desktop.c',
 	'src/wayland.c',
 	'src/vec.c',
+	'src/rdp/server.c',
 ]
 
 dependencies = [
@@ -121,25 +99,11 @@ dependencies = [
 	gbm,
 	drm,
 	wayland_client,
-	neatvnc,
 	xkbcommon,
 	client_protos,
-	jansson,
-]
-
-ctlsources = [
-	'src/wayvncctl.c',
-	'src/util.c',
-	'src/json-ipc.c',
-	'src/ctl-client.c',
-	'src/ctl-commands.c',
-	'src/strlcpy.c',
-	'src/option-parser.c',
-        'src/table-printer.c',
-]
-
-ctldependencies = [
-	jansson,
+	freerdp,
+	freerdp_server,
+	winpr,
 ]
 
 config = configuration_data()
@@ -165,30 +129,16 @@ if gbm.found() and not get_option('screencopy-dmabuf').disabled()
 	config.set('ENABLE_SCREENCOPY_DMABUF', true)
 endif
 
-if libpam.found()
-	dependencies += libpam
-	sources += 'src/pam_auth.c'
-	config.set('ENABLE_PAM', true)
-endif
-
 configure_file(
 	output: 'config.h',
 	configuration: config,
 )
 
 executable(
-	'wayvnc',
+	'wayrdp',
 	sources,
 	dependencies: dependencies,
-	include_directories: inc,
-	install: true,
-)
-
-executable(
-	'wayvncctl',
-	ctlsources,
-	dependencies: ctldependencies,
-	include_directories: inc,
+	include_directories: [inc, include_directories('src')],
 	install: true,
 )
 
@@ -198,8 +148,7 @@ if scdoc.found()
 	sh = find_program('sh', native: true)
 	mandir = get_option('mandir')
 	manpages = {
-		'wayvnc.scd': 'wayvnc.1',
-		'wayvncctl.scd': 'wayvncctl.1',
+		'wayrdp.scd': 'wayrdp.1',
 	}
 
 	foreach input, output : manpages

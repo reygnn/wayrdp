@@ -25,7 +25,7 @@
 #include <wayland-client.h>
 #include <pixman.h>
 #include <string.h>
-#include <neatvnc.h>
+#include "log.h"
 
 #include "linux-dmabuf-unstable-v1.h"
 #include "shm.h"
@@ -50,8 +50,6 @@
 #endif // ENABLE_SCREENCOPY_DMABUF
 
 extern struct wayland* wayland;
-
-static void wv_buffer__handle_cleanup(void* userdata);
 
 static bool modifiers_match(const uint64_t* a, int a_len, const uint64_t* b,
 		int b_len)
@@ -157,15 +155,6 @@ static struct wv_buffer* wv_buffer_create_shm(
 	if (!self->wl_buffer)
 		goto shm_failure;
 
-	int bpp = pixel_size_from_fourcc(config->format);
-	assert(bpp > 0);
-	self->buffer = nvnc_buffer_from_addr(self->pixels);
-	if (!self->buffer) {
-		goto nvnc_buffer_failure;
-	}
-
-	nvnc_buffer_set_userdata(self->buffer, self, wv_buffer__handle_cleanup);
-
 	pixman_region_init(&self->frame_damage);
 	pixman_region_init_rect(&self->buffer_damage, 0, 0, config->width,
 			config->height);
@@ -177,8 +166,6 @@ static struct wv_buffer* wv_buffer_create_shm(
 	close(fd);
 	return self;
 
-nvnc_buffer_failure:
-	wl_buffer_destroy(self->wl_buffer);
 shm_failure:
 pool_failure:
 mmap_failure:
@@ -195,7 +182,7 @@ static const char *get_cma_path(void)
 	static const char *path;
 	if (path)
 		return path;
-	path = getenv("WAYVNC_CMA");
+	path = getenv("WAYRDP_CMA");
 	return path;
 }
 
@@ -203,7 +190,7 @@ static int linux_cma_alloc(size_t size)
 {
 	int fd = open(get_cma_path(), O_RDWR | O_CLOEXEC, 0);
 	if (fd < 0) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to open CMA device: %m");
+		wv_log(WV_LOG_ERROR, "Failed to open CMA device: %m");
 		return -1;
 	}
 
@@ -214,7 +201,7 @@ static int linux_cma_alloc(size_t size)
 
 	int r = ioctl(fd, DMA_HEAP_IOCTL_ALLOC, &data);
 	if (r < 0) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to allocate CMA buffer: %m");
+		wv_log(WV_LOG_ERROR, "Failed to allocate CMA buffer: %m");
 		return -1;
 	}
 	close(fd);
@@ -228,7 +215,7 @@ static struct gbm_bo* create_cma_gbm_bo(int width, int height, uint32_t fourcc,
 {
 	int bpp = pixel_size_from_fourcc(fourcc);
 	if (!bpp) {
-		nvnc_log(NVNC_LOG_PANIC, "Unsupported pixel format: %" PRIu32,
+		wv_log(WV_LOG_PANIC, "Unsupported pixel format: %" PRIu32,
 				fourcc);
 	}
 
@@ -258,7 +245,7 @@ static struct gbm_bo* create_cma_gbm_bo(int width, int height, uint32_t fourcc,
 	struct gbm_bo* bo = gbm_bo_import(gbm->dev, GBM_BO_IMPORT_FD_MODIFIER,
 			&d, 0);
 	if (!bo) {
-		nvnc_log(NVNC_LOG_DEBUG, "Failed to import dmabuf: %m");
+		wv_log(WV_LOG_DEBUG, "Failed to import dmabuf: %m");
 		close(fd);
 		return NULL;
 	}
@@ -361,13 +348,6 @@ static struct wv_buffer* wv_buffer_create_dmabuf(
 	if (!self->wl_buffer)
 		goto buffer_failure;
 
-	self->buffer = nvnc_buffer_from_gbm_bo(self->bo);
-	if (!self->buffer) {
-		goto nvnc_buffer_failure;
-	}
-
-	nvnc_buffer_set_userdata(self->buffer, self, wv_buffer__handle_cleanup);
-
 	pixman_region_init(&self->frame_damage);
 	pixman_region_init_rect(&self->buffer_damage, 0, 0, config->width,
 			config->height);
@@ -380,8 +360,6 @@ static struct wv_buffer* wv_buffer_create_dmabuf(
 			wv_buffer_handle_wayland_destroyed);
 	return self;
 
-nvnc_buffer_failure:
-	wl_buffer_destroy(self->wl_buffer);
 buffer_failure:
 fd_failure:
 	for (int i = 0; i < 4; ++i)
@@ -403,7 +381,7 @@ static struct wv_buffer* wv_buffer_create(const struct wv_buffer_config* config,
 static struct wv_buffer* wv_buffer_create(const struct wv_buffer_config* config)
 #endif
 {
-	nvnc_trace("wv_buffer_create: %dx%d, stride: %d, format: %"PRIu32,
+	wv_trace("wv_buffer_create: %dx%d, stride: %d, format: %"PRIu32,
 			config->width, config->height, config->stride,
 			config->format);
 
@@ -464,11 +442,6 @@ static void wv_buffer_destroy(struct wv_buffer* self)
 	abort();
 }
 
-static void wv_buffer__handle_cleanup(void* userdata)
-{
-	struct wv_buffer* buffer = userdata;
-	wv_buffer_destroy(buffer);
-}
 
 void wv_buffer_damage_rect(struct wv_buffer* self, int x, int y, int width,
 		int height)
@@ -485,6 +458,20 @@ void wv_buffer_damage_whole(struct wv_buffer* self)
 void wv_buffer_damage_clear(struct wv_buffer* self)
 {
 	pixman_region_clear(&self->frame_damage);
+}
+
+/* Destroys the free buffers and cuts the busy ones loose: they go when their
+ * last reference does. */
+static void wv_buffer_pool__drop_all(struct wv_buffer_pool* pool)
+{
+	while (!LIST_EMPTY(&pool->list)) {
+		struct wv_buffer* buffer = LIST_FIRST(&pool->list);
+		LIST_REMOVE(buffer, link);
+		memset(&buffer->link, 0, sizeof(buffer->link));
+		buffer->pool = NULL;
+		if (!buffer->in_use)
+			wv_buffer_destroy(buffer);
+	}
 }
 
 struct wv_buffer_pool* wv_buffer_pool_create(
@@ -504,12 +491,7 @@ struct wv_buffer_pool* wv_buffer_pool_create(
 
 void wv_buffer_pool_destroy(struct wv_buffer_pool* pool)
 {
-	while (!LIST_EMPTY(&pool->list)) {
-		struct wv_buffer* buffer = LIST_FIRST(&pool->list);
-		LIST_REMOVE(buffer, link);
-		memset(&buffer->link, 0, sizeof(buffer->link));
-	}
-	nvnc_buffer_pool_unref(pool->nvnc_pool);
+	wv_buffer_pool__drop_all(pool);
 	free(pool->config.modifiers);
 #ifdef ENABLE_SCREENCOPY_DMABUF
 	wv_gbm_device_unref(pool->gbm);
@@ -558,15 +540,15 @@ static void open_render_node(struct wv_buffer_pool* pool)
 	if (pool->config.node) {
 		if (render_node_from_dev_t(path, sizeof(path),
 					pool->config.node) < 0) {
-			nvnc_log(NVNC_LOG_ERROR, "Could not find render node from dev_t");
+			wv_log(WV_LOG_ERROR, "Could not find render node from dev_t");
 			return;
 		}
 	} else if (find_render_node(path, sizeof(path)) < 0) {
-		nvnc_log(NVNC_LOG_ERROR, "Could not find a render node");
+		wv_log(WV_LOG_ERROR, "Could not find a render node");
 		return;
 	}
 
-	nvnc_log(NVNC_LOG_DEBUG, "Using render node: %s", path);
+	wv_log(WV_LOG_DEBUG, "Using render node: %s", path);
 
 	pool->gbm = calloc(1, sizeof(*pool->gbm));
 	assert(pool->gbm);
@@ -575,7 +557,7 @@ static void open_render_node(struct wv_buffer_pool* pool)
 
 	pool->gbm->fd = open(path, O_RDWR);
 	if (pool->gbm->fd < 0) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to open render node %s: %m",
+		wv_log(WV_LOG_ERROR, "Failed to open render node %s: %m",
 				path);
 		free(pool->gbm);
 		pool->gbm = NULL;
@@ -584,7 +566,7 @@ static void open_render_node(struct wv_buffer_pool* pool)
 
 	pool->gbm->dev = gbm_create_device(pool->gbm->fd);
 	if (!pool->gbm->dev) {
-		nvnc_log(NVNC_LOG_ERROR, "Failed to create a GBM device");
+		wv_log(WV_LOG_ERROR, "Failed to create a GBM device");
 		close(pool->gbm->fd);
 		free(pool->gbm);
 		pool->gbm = NULL;
@@ -614,33 +596,15 @@ bool reconfig_render_node(struct wv_buffer_pool* pool,
 }
 #endif // ENABLE_SCREENCOPY_DMABUF
 
-static struct nvnc_buffer* wv_buffer_pool__alloc(
-		struct nvnc_buffer_pool* nvnc_pool)
-{
-	struct wv_buffer_pool* pool = nvnc_buffer_pool_get_userdata(nvnc_pool);
-#ifdef ENABLE_SCREENCOPY_DMABUF
-	struct wv_buffer* buffer = wv_buffer_create(&pool->config, pool->gbm);
-#else
-	struct wv_buffer* buffer =  wv_buffer_create(&pool->config);
-#endif
-	if (!buffer)
-		return NULL;
-
-	LIST_INSERT_HEAD(&pool->list, buffer, link);
-	return buffer->buffer;
-}
-
 bool wv_buffer_pool_reconfig(struct wv_buffer_pool* pool,
 		const struct wv_buffer_config* config)
 {
 	if (buffer_configs_match(&pool->config, config))
 		return true;
 
-	nvnc_log(NVNC_LOG_DEBUG, "Reconfiguring buffer pool");
+	wv_log(WV_LOG_DEBUG, "Reconfiguring buffer pool");
 
-	nvnc_buffer_pool_unref(pool->nvnc_pool);
-	pool->nvnc_pool = nvnc_buffer_pool_new(wv_buffer_pool__alloc);
-	nvnc_buffer_pool_set_userdata(pool->nvnc_pool, pool, NULL);
+	wv_buffer_pool__drop_all(pool);
 
 #ifdef ENABLE_SCREENCOPY_DMABUF
 	dev_t old_node  = pool->config.node;
@@ -657,37 +621,52 @@ bool wv_buffer_pool_reconfig(struct wv_buffer_pool* pool,
 
 struct wv_buffer* wv_buffer_pool_acquire(struct wv_buffer_pool* pool)
 {
-	struct nvnc_buffer* nvnc_buffer = nvnc_buffer_pool_acquire(pool->nvnc_pool);
-	if (!nvnc_buffer)
+	struct wv_buffer* buffer;
+	LIST_FOREACH(buffer, &pool->list, link)
+		if (!buffer->in_use)
+			goto found;
+
+#ifdef ENABLE_SCREENCOPY_DMABUF
+	buffer = wv_buffer_create(&pool->config, pool->gbm);
+#else
+	buffer = wv_buffer_create(&pool->config);
+#endif
+	if (!buffer)
 		return NULL;
 
-	struct wv_buffer* buffer = nvnc_buffer_get_userdata(nvnc_buffer);
-	assert(buffer);
+	buffer->pool = pool;
+	LIST_INSERT_HEAD(&pool->list, buffer, link);
 
-	struct wv_buffer_config* config = &pool->config;
-
-	int bpp = pixel_size_from_fourcc(config->format);
-	assert(bpp > 0);
-
-	assert(!buffer->nvnc_frame);
-	buffer->nvnc_frame = nvnc_frame_from_buffer(nvnc_buffer, config->width,
-			config->height, config->format, config->stride / bpp);
-	assert(buffer->nvnc_frame);
-
-	// Ownership is passed over to nvnc_frame
-	nvnc_buffer_unref(nvnc_buffer);
-
+found:
+	buffer->in_use = true;
+	buffer->ref = 1;
+	buffer->pts = 0;
+	buffer->transform = WL_OUTPUT_TRANSFORM_NORMAL;
 	return buffer;
+}
+
+struct wv_buffer* wv_buffer_ref(struct wv_buffer* self)
+{
+	assert(self->in_use && self->ref > 0);
+	self->ref++;
+	return self;
 }
 
 void wv_buffer_release(struct wv_buffer* self)
 {
 	if (!self)
 		return;
+
+	assert(self->in_use && self->ref > 0);
+	if (--self->ref > 0)
+		return;
+
 	pixman_region_clear(&self->frame_damage);
-	struct nvnc_frame* fb = self->nvnc_frame;
-	self->nvnc_frame = NULL;
-	nvnc_frame_unref(fb);
+	self->in_use = false;
+
+	/* Left behind by a reconfig or a destroyed pool. */
+	if (!self->pool)
+		wv_buffer_destroy(self);
 }
 
 void wv_buffer_pool_damage_all(struct wv_buffer_pool* self,

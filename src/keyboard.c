@@ -18,6 +18,7 @@
  * interface.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -27,7 +28,7 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon.h>
 #include <wayland-client.h>
-#include <neatvnc.h>
+#include "log.h"
 
 #include "virtual-keyboard-unstable-v1.h"
 #include "keyboard.h"
@@ -170,7 +171,7 @@ static void keyboard__dump_entry(const struct keyboard* self,
 	bool is_pressed MAYBE_UNUSED =
 		intset_is_set(&self->key_state, entry->code);
 
-	nvnc_log(NVNC_LOG_DEBUG, "group=%s symbol=%s level=%d code=%s %s",
+	wv_log(WV_LOG_DEBUG, "group=%s symbol=%s level=%d code=%s %s",
 			group_name, sym_name, entry->level, code_name,
 			is_pressed ? "pressed" : "released");
 }
@@ -315,7 +316,7 @@ static struct table_entry* keyboard_find_symbol(struct keyboard* self,
 	assert(group >= 0);
 
 	if (entry && group != current_group) {
-		nvnc_log(NVNC_LOG_DEBUG, "Keyboard symbol was not found in active layout group; changing to a different one where it was found...");
+		wv_log(WV_LOG_DEBUG, "Keyboard symbol was not found in active layout group; changing to a different one where it was found...");
 		struct kb_mods mods;
 		save_mods(self, &mods);
 		xkb_state_update_mask(self->state, mods.depressed, mods.latched,
@@ -444,7 +445,7 @@ static void send_key_with_level(struct keyboard* self, xkb_keycode_t code,
 			current_group);
 	keyboard_send_mods(self);
 
-	nvnc_log(NVNC_LOG_DEBUG, "send key with level: old mods: %x, new mods: %x",
+	wv_log(WV_LOG_DEBUG, "send key with level: old mods: %x, new mods: %x",
 			save.latched | save.locked | save.depressed, mods);
 
 	send_key(self, code, is_pressed);
@@ -473,7 +474,7 @@ void keyboard_feed(struct keyboard* self, xkb_keysym_t symbol, bool is_pressed)
 	struct table_entry* entry = keyboard_find_symbol(self, symbol);
 	if (!entry) {
 		char name[256];
-		nvnc_log(NVNC_LOG_ERROR, "Failed to look up keyboard symbol: %s",
+		wv_log(WV_LOG_ERROR, "Failed to look up keyboard symbol: %s",
 		          get_symbol_name(symbol, name, sizeof(name)));
 		return;
 	}
@@ -513,17 +514,17 @@ void keyboard_feed_code(struct keyboard* self, xkb_keycode_t code,
 	}
 }
 
-enum nvnc_keyboard_led_state keyboard_get_led_state(
+enum keyboard_led_state keyboard_get_led_state(
 		const struct keyboard* self)
 {
-	enum nvnc_keyboard_led_state led_state = 0;
+	enum keyboard_led_state led_state = 0;
 
 	if (xkb_state_led_name_is_active(self->state, XKB_LED_NAME_SCROLL))
-		led_state |= NVNC_KEYBOARD_LED_SCROLL_LOCK;
+		led_state |= KEYBOARD_LED_SCROLL_LOCK;
 	if (xkb_state_led_name_is_active(self->state, XKB_LED_NAME_NUM))
-		led_state |= NVNC_KEYBOARD_LED_NUM_LOCK;
+		led_state |= KEYBOARD_LED_NUM_LOCK;
 	if (xkb_state_led_name_is_active(self->state, XKB_LED_NAME_CAPS))
-		led_state |= NVNC_KEYBOARD_LED_CAPS_LOCK;
+		led_state |= KEYBOARD_LED_CAPS_LOCK;
 
 	return led_state;
 }

@@ -24,7 +24,7 @@
 #include <assert.h>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
-#include <neatvnc.h>
+#include "log.h"
 
 #include "output.h"
 #include "strlcpy.h"
@@ -88,7 +88,7 @@ static void output_handle_done(void* data, struct wl_output* wl_output)
 	strcpy(output->state.description, output->pending.description);
 
 	if (geometry_changed) {
-		nvnc_trace("%s: geometry changed: logical: %"PRIu32"x%"PRIu32"+(%"PRIu32",%"PRIu32"), buffer: %"PRIu32"x%"PRIu32,
+		wv_trace("%s: geometry changed: logical: %"PRIu32"x%"PRIu32"+(%"PRIu32",%"PRIu32"), buffer: %"PRIu32"x%"PRIu32,
 				output->state.name,
 				output->state.logical_width,
 				output->state.logical_height, output->state.x,
@@ -189,7 +189,7 @@ static void output_power_mode(void *data,
 		     uint32_t mode)
 {
 	struct output* self = data;
-	nvnc_trace("Output %s power state changed to %s", self->state.name,
+	wv_trace("Output %s power state changed to %s", self->state.name,
 			(mode == ZWLR_OUTPUT_POWER_V1_MODE_ON) ? "ON" : "OFF");
 
 	enum image_source_power_state old = self->power;
@@ -210,7 +210,7 @@ static void output_power_failed(void *data,
 		     struct zwlr_output_power_v1 *zwlr_output_power_v1)
 {
 	struct output* self = data;
-	nvnc_log(NVNC_LOG_WARNING, "Output %s power state failure",
+	wv_log(WV_LOG_WARNING, "Output %s power state failure",
 			self->state.name);
 	self->power_management_failed = true;
 	self->power = IMAGE_SOURCE_POWER_ON;
@@ -404,7 +404,7 @@ struct output* output_new(struct wayland* wayland, struct wl_output* wl_output,
 {
 	struct output* output = calloc(1, sizeof(*output));
 	if (!output) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM");
+		wv_log(WV_LOG_ERROR, "OOM");
 		return NULL;
 	}
 

@@ -23,7 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <neatvnc.h>
+#include "log.h"
 
 static void desktop_capture_handle_done(enum screencopy_result result,
 		struct wv_buffer* buffer, struct image_source* source,
@@ -113,12 +113,12 @@ static enum image_source_power_state desktop_image_source_get_power_state(
 		enum image_source_power_state this_state =
 			image_source_get_power(&output->output->image_source);
 		if (this_state != state) {
-			nvnc_log(NVNC_LOG_WARNING, "Power state mismatch between outputs");
+			wv_log(WV_LOG_WARNING, "Power state mismatch between outputs");
 			return IMAGE_SOURCE_POWER_UNKNOWN;
 		}
 	}
 
-	nvnc_log(NVNC_LOG_DEBUG, "Returing power state: %s\n",
+	wv_log(WV_LOG_DEBUG, "Returing power state: %s\n",
 			image_source_power_state_name(state));
 	return state;
 }
@@ -188,7 +188,7 @@ static void desktop_image_source_output_power_change(struct observer* observer,
 	}
 
 	if (n_on == n || n_off == n) {
-		nvnc_log(NVNC_LOG_DEBUG, "Desktop power state changed\n");
+		wv_log(WV_LOG_DEBUG, "Desktop power state changed\n");
 		observable_notify(&desktop->image_source.observable.power_change,
 				NULL);
 	}
@@ -547,7 +547,7 @@ static enum screencopy_capabilitites desktop_capture_get_caps(
 		return 0;
 
 	if (LIST_EMPTY(&desktop->outputs)) {
-		nvnc_log(NVNC_LOG_ERROR, "Whoops. No outputs. Can't get capabilities");
+		wv_log(WV_LOG_ERROR, "Whoops. No outputs. Can't get capabilities");
 		return 0;
 	}
 

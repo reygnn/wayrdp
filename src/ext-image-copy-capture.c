@@ -26,7 +26,7 @@
 #include <wayland-client.h>
 #include <libdrm/drm_fourcc.h>
 #include <aml.h>
-#include <neatvnc.h>
+#include "log.h"
 #include <wayland.h>
 
 #include "screencopy-interface.h"
@@ -240,7 +240,7 @@ static void ext_image_copy_capture_schedule_capture(
 #ifndef NDEBUG
 	float damage_area = calculate_region_area(&self->buffer->buffer_damage);
 	float pixel_area = self->buffer->width * self->buffer->height;
-	nvnc_trace("Committed %sbuffer: %p with %.02f %% damage",
+	wv_trace("Committed %sbuffer: %p with %.02f %% damage",
 			self->is_cursor_session ? "cursor " : "", self->buffer,
 			100.0 * damage_area / pixel_area);
 #endif
@@ -311,7 +311,7 @@ static void session_handle_format_drm(void *data,
 	clear_constraints(self);
 
 	if (modifiers->size % 8 != 0) {
-		nvnc_log(NVNC_LOG_WARNING, "DMA-BUF modifier array size is not a multiple of 8");
+		wv_log(WV_LOG_WARNING, "DMA-BUF modifier array size is not a multiple of 8");
 	}
 
 	int n_modifiers = modifiers->size / 8;
@@ -336,7 +336,7 @@ static void session_handle_dmabuf_device(void* data,
 	clear_constraints(self);
 
 	if (device->size != sizeof(self->dmabuf_dev)) {
-		nvnc_log(NVNC_LOG_ERROR, "array size != sizeof(dev_t)");
+		wv_log(WV_LOG_ERROR, "array size != sizeof(dev_t)");
 		return;
 	}
 
@@ -352,7 +352,7 @@ static void session_handle_dimensions(void *data,
 
 	clear_constraints(self);
 
-	nvnc_log(NVNC_LOG_DEBUG, "Buffer dimensions: %"PRIu32"x%"PRIu32,
+	wv_log(WV_LOG_DEBUG, "Buffer dimensions: %"PRIu32"x%"PRIu32,
 			width, height);
 
 	self->width = width;
@@ -379,7 +379,7 @@ static void rate_formats_in_array(const struct ext_image_copy_capture* self,
 		entry->score = rate_format(self, type, entry->format,
 				entry->modifier);
 
-		nvnc_trace("Format:modifier %.4s:%"PRIx64" score: %f",
+		wv_trace("Format:modifier %.4s:%"PRIx64" score: %f",
 				(const char*)&entry->format, entry->modifier,
 				entry->score);
 	}
@@ -401,7 +401,7 @@ static void select_modifiers_for_top_format(struct wv_buffer_config* config,
 				entry->score != top_entry->score)
 			break;
 
-		nvnc_trace("Adding modifier: %"PRIx64, entry->modifier);
+		wv_trace("Adding modifier: %"PRIx64, entry->modifier);
 		config->modifiers[config->n_modifiers++] = entry->modifier;
 	}
 }
@@ -430,7 +430,7 @@ static bool config_dma_buffers(struct ext_image_copy_capture* self)
 	if (self->have_dmabuf_dev)
 		config.node = self->dmabuf_dev;
 
-	nvnc_trace("Choosing DMA-BUF format \"%.4s\" with %d modifiers",
+	wv_trace("Choosing DMA-BUF format \"%.4s\" with %d modifiers",
 			(const char*)&config.format, config.n_modifiers);
 
 	bool ok = wv_buffer_pool_reconfig(self->pool, &config);
@@ -464,7 +464,7 @@ static bool config_shm_buffers(struct ext_image_copy_capture* self)
 
 	config.stride = bpp * config.width;
 
-	nvnc_trace("Choosing SHM format \"%.4s\"", (const char*)&config.format);
+	wv_trace("Choosing SHM format \"%.4s\"", (const char*)&config.format);
 
 	return wv_buffer_pool_reconfig(self->pool, &config);
 }
@@ -472,7 +472,7 @@ static bool config_shm_buffers(struct ext_image_copy_capture* self)
 static bool config_buffers(struct ext_image_copy_capture* self)
 {
 	if (!config_dma_buffers(self) && !config_shm_buffers(self)) {
-		nvnc_log(NVNC_LOG_ERROR, "No supported buffer formats were found");
+		wv_log(WV_LOG_ERROR, "No supported buffer formats were found");
 		return false;
 	}
 
@@ -495,7 +495,7 @@ static void session_handle_constraints_done(void *data,
 
 	self->have_constraints = true;
 
-	nvnc_log(NVNC_LOG_DEBUG, "Init done");
+	wv_log(WV_LOG_DEBUG, "Init done");
 }
 
 static void restart_session(struct ext_image_copy_capture* self)
@@ -510,7 +510,7 @@ static void restart_session(struct ext_image_copy_capture* self)
 static void session_handle_stopped(void* data,
 		struct ext_image_copy_capture_session_v1* session)
 {
-	nvnc_log(NVNC_LOG_DEBUG, "Session %p stopped", session);
+	wv_log(WV_LOG_DEBUG, "Session %p stopped", session);
 	// TODO: Restart session if it is stopped?
 }
 
@@ -522,7 +522,7 @@ static void frame_handle_transform(void *data,
 	assert(self->buffer);
 
 	// TODO: Tell main.c not to override this transform
-	nvnc_frame_set_transform(self->buffer->nvnc_frame, transform);
+	self->buffer->transform = (enum wl_output_transform)transform;
 }
 
 static void frame_handle_ready(void *data,
@@ -537,7 +537,7 @@ static void frame_handle_ready(void *data,
 #ifndef NDEBUG
 	float damage_area = calculate_region_area(&self->buffer->frame_damage);
 	float pixel_area = self->buffer->width * self->buffer->height;
-	nvnc_trace("Frame ready with damage: %.02f %", 100.0 * damage_area /
+	wv_trace("Frame ready with damage: %.02f %%", 100.0 * damage_area /
 			pixel_area);
 #endif
 
@@ -568,7 +568,7 @@ static void frame_handle_failed(void *data,
 	ext_image_copy_capture_frame_v1_destroy(self->frame);
 	self->frame = NULL;
 
-	nvnc_log(NVNC_LOG_DEBUG, "Failed!\n");
+	wv_log(WV_LOG_DEBUG, "Failed!\n");
 
 	assert(self->buffer);
 
@@ -590,7 +590,7 @@ static void frame_handle_damage(void *data,
 {
 	struct ext_image_copy_capture* self = data;
 
-	nvnc_trace("Got frame damage: %dx%d", width, height);
+	wv_trace("Got frame damage: %dx%d", width, height);
 	wv_buffer_damage_rect(self->buffer, x, y, width, height);
 }
 
@@ -602,8 +602,8 @@ static void frame_handle_presentation_time(void *data,
 
 	uint64_t sec = (uint64_t)sec_hi << 32 | (uint64_t)sec_lo;
 	uint64_t pts = sec * UINT64_C(1000000) + (uint64_t)nsec / UINT64_C(1000);
-	nvnc_trace("Setting buffer pts: %" PRIu64, pts);
-	nvnc_frame_set_pts(self->buffer->nvnc_frame, pts);
+	wv_trace("Setting buffer pts: %" PRIu64, pts);
+	self->buffer->pts = pts;
 }
 
 static struct ext_image_copy_capture_session_v1_listener session_listener = {
@@ -655,7 +655,7 @@ static void cursor_handle_hotspot(void* data,
 	if (self->parent.cursor_hotspot)
 		self->parent.cursor_hotspot(x, y, self->parent.userdata);
 
-	nvnc_trace("Got hotspot at %d, %d", x, y);
+	wv_trace("Got hotspot at %d, %d", x, y);
 }
 
 static struct ext_image_copy_capture_cursor_session_v1_listener cursor_listener = {
@@ -689,7 +689,7 @@ static int ext_image_copy_capture_start(struct screencopy* ptr, bool immediate)
 	int32_t time_left = (1.0 / ptr->rate_limit - dt) * 1.0e6;
 
 	if (time_left > 0) {
-		nvnc_trace("Scheduling %scapture after %"PRIu64" µs",
+		wv_trace("Scheduling %scapture after %"PRId32" µs",
 				self->is_cursor_session ? "cursor " : "",
 				time_left);
 		aml_set_duration(self->timer, time_left);

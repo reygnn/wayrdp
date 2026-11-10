@@ -21,8 +21,4 @@
 #define UDIV_UP(a, b) (((a) + (b) - 1) / (b))
 #define ALIGN_UP(a, b) ((b) * UDIV_UP((a), (b)))
 
-extern const char* wayvnc_version;
-
-const char* default_ctl_socket_path();
-
 void advance_read_buffer(char (*buffer)[], size_t* current_len, size_t advance_by);

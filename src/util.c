@@ -18,29 +18,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
 
 #include "util.h"
-
-const char* wayvnc_version =
-#if defined(PROJECT_VERSION)
-		PROJECT_VERSION;
-#else
-		"UNKNOWN";
-#endif
-
-const char* default_ctl_socket_path()
-{
-	static char buffer[128];
-	char* xdg_runtime = getenv("XDG_RUNTIME_DIR");
-	if (xdg_runtime)
-		snprintf(buffer, sizeof(buffer),
-				"%s/wayvncctl", xdg_runtime);
-	else
-		snprintf(buffer, sizeof(buffer),
-				"/tmp/wayvncctl-%d", getuid());
-	return buffer;
-}
 
 void advance_read_buffer(char (*buffer)[], size_t* current_len, size_t advance_by)
 {

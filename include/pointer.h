@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Andri Yngvason
+ * Copyright (c) 2019 - 2024 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,26 +14,43 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
-#include <neatvnc.h>
 #include "wlr-virtual-pointer-unstable-v1.h"
 
-struct image_source;
+/*
+ * The pointer as RDP sees it: an absolute position, single buttons and
+ * wheels in 120ths of a notch. wayvnc's version took VNC button masks.
+ */
+
+enum pointer_axis {
+	POINTER_AXIS_VERTICAL = 0,
+	POINTER_AXIS_HORIZONTAL,
+};
 
 struct pointer {
-	struct nvnc* vnc;
 	struct zwlr_virtual_pointer_v1* pointer;
 
-	enum nvnc_button_mask current_mask;
+	/* Last position, normalised to 0..1. */
+	double current_x;
+	double current_y;
 
-	uint32_t current_x;
-	uint32_t current_y;
+	/* Remainders of high-resolution wheels that don't make a notch yet. */
+	int32_t axis_remainder[2];
 };
 
 int pointer_init(struct pointer* self);
 void pointer_destroy(struct pointer* self);
 
-void pointer_set(struct pointer* self, double x, double y,
-		enum nvnc_button_mask button_mask);
+/* x and y from 0 to 1 over the captured output. */
+void pointer_motion(struct pointer* self, double x, double y);
+/* code: BTN_LEFT, BTN_RIGHT, … from linux/input-event-codes.h */
+void pointer_button(struct pointer* self, uint32_t code, bool is_pressed);
+/* value120: 120 is one notch. Positive is down or right, as in Wayland. */
+void pointer_axis(struct pointer* self, enum pointer_axis axis,
+		int32_t value120);
+/* Ends a group of the calls above, like wl_pointer.frame. */
+void pointer_frame(struct pointer* self);

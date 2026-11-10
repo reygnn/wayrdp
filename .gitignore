@@ -1,5 +1,6 @@
 build
-subprojects
+subprojects/*
+!subprojects/*.wrap
 *.swp
 .clang_complete
 .ycm_extra_conf.py

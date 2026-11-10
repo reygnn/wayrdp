@@ -14,7 +14,8 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <neatvnc.h>
+#include <stdlib.h>
+#include "log.h"
 #include <string.h>
 #include <wayland-client.h>
 
@@ -45,7 +46,7 @@ static void output_head_name(void* data,
 		struct zwlr_output_head_v1* output_head, const char* name)
 {
 	struct output_manager_head* head = data;
-	nvnc_trace("Got head name: %s", name);
+	wv_trace("Got head name: %s", name);
 	free(head->name);
 	head->name = strdup(name);
 }
@@ -54,26 +55,26 @@ static void output_head_description(void* data,
 		struct zwlr_output_head_v1* output_head,
 		const char* description)
 {
-	nvnc_trace("Got head description: %s", description);
+	wv_trace("Got head description: %s", description);
 }
 
 static void output_head_physical_size(void* data,
 		struct zwlr_output_head_v1* output_head,
 		int32_t width, int32_t height)
 {
-	nvnc_trace("Got head size: %dx%d", width, height);
+	wv_trace("Got head size: %dx%d", width, height);
 }
 
 static void output_head_mode(void* data,
 		struct zwlr_output_head_v1* output_head,
 		struct zwlr_output_mode_v1* mode)
 {
-	nvnc_trace("Got head mode");
+	wv_trace("Got head mode");
 	struct output_manager_head* head = data;
 
 	struct output_manager_mode* entry = calloc(1, sizeof(*entry));
 	if (!entry) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM");
+		wv_log(WV_LOG_ERROR, "OOM");
 		zwlr_output_mode_v1_release(mode);
 		return;
 	}
@@ -85,7 +86,7 @@ static void output_head_mode(void* data,
 static void output_head_enabled(void* data,
 		struct zwlr_output_head_v1* output_head, int32_t enabled)
 {
-	nvnc_trace("Got head enabled: %s", enabled ? "yes" : "no");
+	wv_trace("Got head enabled: %s", enabled ? "yes" : "no");
 	struct output_manager_head* head = data;
 	head->enabled = !!enabled;
 }
@@ -94,19 +95,19 @@ static void output_head_current_mode(void* data,
 		struct zwlr_output_head_v1* output_head,
 		struct zwlr_output_mode_v1* mode)
 {
-	nvnc_trace("Got head current mode");
+	wv_trace("Got head current mode");
 }
 
 static void output_head_position(void* data,
 		struct zwlr_output_head_v1* output_head, int32_t x, int32_t y)
 {
-	nvnc_trace("Got head position: %d,%d", x, y);
+	wv_trace("Got head position: %d,%d", x, y);
 }
 
 static void output_head_transform(void* data,
 		struct zwlr_output_head_v1* output_head, int32_t transform)
 {
-	nvnc_trace("Got head transform: %d", transform);
+	wv_trace("Got head transform: %d", transform);
 }
 
 static void output_head_scale(void* data,
@@ -114,27 +115,27 @@ static void output_head_scale(void* data,
 {
 #ifndef NDEBUG
 	double scale = wl_fixed_to_double(scale_f);
-	nvnc_trace("Got head scale: %.2f", scale);
+	wv_trace("Got head scale: %.2f", scale);
 #endif
 }
 
 static void output_head_make(void* data,
 		struct zwlr_output_head_v1* output_head, const char* make)
 {
-	nvnc_trace("Got head make: %s", make);
+	wv_trace("Got head make: %s", make);
 }
 
 static void output_head_model(void* data,
 		struct zwlr_output_head_v1* output_head, const char* model)
 {
-	nvnc_trace("Got head model: %s", model);
+	wv_trace("Got head model: %s", model);
 }
 
 static void output_head_serial_number(void* data,
 		struct zwlr_output_head_v1* output_head,
 		const char* serial_number)
 {
-	nvnc_trace("Got head serial number: %s", serial_number);
+	wv_trace("Got head serial number: %s", serial_number);
 }
 
 static void output_head_destroy(struct output_manager_head* head)
@@ -157,7 +158,7 @@ static void output_head_destroy(struct output_manager_head* head)
 static void output_head_finished(void* data,
 		struct zwlr_output_head_v1* output_head)
 {
-	nvnc_trace("head gone, removing");
+	wv_trace("head gone, removing");
 	struct output_manager_head* head = data;
 	output_head_destroy(head);
 }
@@ -182,21 +183,21 @@ struct zwlr_output_head_v1_listener wlr_output_head_listener = {
 static void output_manager_config_succeeded(void* data,
 		struct zwlr_output_configuration_v1* config)
 {
-	nvnc_trace("config request succeeded");
+	wv_trace("config request succeeded");
 	zwlr_output_configuration_v1_destroy(config);
 }
 
 static void output_manager_config_failed(void* data,
 		struct zwlr_output_configuration_v1* config)
 {
-	nvnc_trace("config request failed");
+	wv_trace("config request failed");
 	zwlr_output_configuration_v1_destroy(config);
 }
 
 static void output_manager_config_cancelled(void* data,
 		struct zwlr_output_configuration_v1* config)
 {
-	nvnc_trace("config request cancelled");
+	wv_trace("config request cancelled");
 	zwlr_output_configuration_v1_destroy(config);
 }
 
@@ -212,13 +213,13 @@ static void output_manager_done(void* data,
 		uint32_t serial)
 {
 	last_config_serial = serial;
-	nvnc_trace("Got new serial: %u", serial);
+	wv_trace("Got new serial: %u", serial);
 }
 
 static void output_manager_finished(void* data,
 		struct zwlr_output_manager_v1* zwlr_output_manager_v1)
 {
-	nvnc_trace("output-manager destroyed");
+	wv_trace("output-manager destroyed");
 	wlr_output_manager = NULL;
 }
 
@@ -228,14 +229,14 @@ static void output_manager_head(void* data,
 {
 	struct output_manager_head* head = calloc(1, sizeof(*head));
 	if (!head) {
-		nvnc_log(NVNC_LOG_ERROR, "OOM");
+		wv_log(WV_LOG_ERROR, "OOM");
 		return;
 	}
 
 	head->head = output_head;
 	wl_list_init(&head->modes);
 	wl_list_insert(heads.prev, &head->link);
-	nvnc_trace("New head, now at %lu", wl_list_length(&heads));
+	wv_trace("New head, now at %d", wl_list_length(&heads));
 
 	zwlr_output_head_v1_add_listener(head->head,
 		&wlr_output_head_listener, head);
@@ -279,7 +280,7 @@ void wlr_output_manager_destroy(void)
 struct zwlr_output_configuration_v1* wlr_output_manager_start_config(void)
 {
 	if (!wlr_output_manager) {
-		nvnc_log(NVNC_LOG_INFO,
+		wv_log(WV_LOG_INFO,
 			"output-management protocol not available, not resizing output");
 		return NULL;
 	}
@@ -299,12 +300,12 @@ bool wlr_output_manager_commit_config(
 	wl_list_for_each(head, &heads, link) {
 		if (head->enabled)
 			continue;
-		nvnc_trace("disabling output %s", head->name);
+		wv_trace("disabling output %s", head->name);
 		zwlr_output_configuration_v1_disable_head(
 			config, head->head);
 	}
 
-	nvnc_trace("applying new output config");
+	wv_trace("applying new output config");
 	zwlr_output_configuration_v1_apply(config);
 	return true;
 }
@@ -324,7 +325,7 @@ bool wlr_output_manager_configure_output(
 	int refresh_rate = 0;
 
 	if (!output_is_headless(output)) {
-		nvnc_log(NVNC_LOG_INFO,
+		wv_log(WV_LOG_INFO,
 			"not resizing output %s: not a headless one",
 			output_get_name(output));
 		return false;
@@ -342,7 +343,7 @@ bool wlr_output_manager_configure_output(
 			zwlr_output_configuration_v1_enable_head(
 				config, head->head);
 
-		nvnc_trace("reconfiguring output %s", head->name);
+		wv_trace("reconfiguring output %s", head->name);
 		zwlr_output_configuration_head_v1_set_custom_mode(
 			config_head, width, height, refresh_rate);
 

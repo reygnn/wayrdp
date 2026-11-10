@@ -19,24 +19,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* The keys of ~/.config/wayrdp/config, see docs/wayrdp-Entwurf.md. */
 #define X_CFG_LIST \
-	X(bool, enable_auth) \
-	X(bool, relax_encryption) \
-	X(bool, allow_broken_crypto) \
-	X(string, private_key_file) \
-	X(string, certificate_file) \
-	X(string, rsa_private_key_file) \
-	X(string, username) \
-	X(string, password) \
 	X(string, address) \
 	X(uint, port) \
-	X(bool, enable_pam) \
-	X(string, xkb_rules) \
-	X(string, xkb_model) \
-	X(string, xkb_layout) \
-	X(string, xkb_variant) \
-	X(string, xkb_options) \
-	X(bool, use_relative_paths) \
+	X(string, auth) \
+	X(string, sam_file) \
+	X(string, certificate_file) \
+	X(string, private_key_file) \
+	X(string, keyboard) \
+	X(string, output) \
+	X(uint, max_rate) \
 
 struct cfg {
 	char* directory;

@@ -1,213 +1,70 @@
-# wayvnc
+# wayrdp
 
-[![builds.sr.ht status](https://builds.sr.ht/~andri/wayvnc.svg)](https://builds.sr.ht/~andri/wayvnc?)
-[![Packaging status](https://repology.org/badge/tiny-repos/wayvnc.svg)](https://repology.org/project/wayvnc/versions)
+An RDP server for wlroots-based Wayland compositors, made for
+[mwc](https://github.com/reygnn/mwc) on a headless server: Windows' Remote
+Desktop (`mstsc`) connects through an SSH tunnel straight to wayrdp, without
+xrdp and wayvnc in between.
 
-## Introduction
-This is a VNC server for wlroots-based Wayland compositors (:no_entry: Gnome,
-KDE and Weston are **not** supported). It attaches to a running Wayland session,
-creates virtual input devices, and exposes a single display via the RFB
-protocol. The Wayland session may be a headless one, so it is also possible
-to run wayvnc without a physical display attached.
+wayrdp is a fork of [wayvnc](https://github.com/any1/wayvnc) 0.10.2. The
+Wayland side (capture, virtual keyboard and pointer, clipboard, output
+management) is wayvnc's; the VNC side (neatvnc) is replaced by FreeRDP 3. The
+design, milestones and open questions are in
+[docs/wayrdp-Entwurf.md](docs/wayrdp-Entwurf.md).
 
-Please check the [FAQ](FAQ.md) for answers to common questions. For further
-support, join the #wayvnc IRC channel on libera.chat, or ask your questions on the
-GitHub [discussion forum](https://github.com/any1/wayvnc/discussions) for the
-project.
+## Status
+
+**M0 – fork and build.** neatvnc is gone, wayrdp builds against FreeRDP 3 and
+connects to mwc: it finds the output, captures frames and hands them to the
+RDP side. There is no RDP listener yet, so `mstsc` can't connect. That is M1.
+
+| Milestone | Content | State |
+|---|---|---|
+| M0 | Fork, neatvnc out, `wv_log()`, builds against FreeRDP 3, connects to mwc | done |
+| M1 | Listener, peer, TLS, NLA, RemoteFX, flow control | |
+| M2 | Keyboard, mouse, wheel, Synchronize, Unicode | |
+| M3 | Clipboard in both directions | |
+| M4 | Size follows the mstsc window, pointer images | |
+| M5 | Hardening, `pam` mode, docs; replaces xrdp and wayvnc | |
 
 ## Building
-### Runtime Dependencies
- * aml
- * drm
- * gbm (optional)
- * libxkbcommon
- * neatvnc
- * pam (optional)
- * pixman
- * jansson
 
-### Build Dependencies
- * GCC
- * meson
- * ninja
- * pkg-config
+Ubuntu 26.04 has everything (FreeRDP 3.32, wlroots 0.19 for mwc). The
+development box brings the packages:
 
-#### For Arch Linux
-```
-pacman -S base-devel libglvnd libxkbcommon pixman gnutls jansson
-```
-
-#### For Fedora 37
-```
-dnf install -y meson gcc ninja-build pkg-config egl-wayland egl-wayland-devel \
-	mesa-libEGL-devel mesa-libEGL libwayland-egl libglvnd-devel \
-	libglvnd-core-devel libglvnd mesa-libGLES-devel mesa-libGLES \
-	libxkbcommon-devel libxkbcommon libwayland-client \
-	pam-devel pixman-devel libgbm-devel libdrm-devel scdoc \
-	libavcodec-free-devel libavfilter-free-devel libavutil-free-devel \
-	turbojpeg-devel	wayland-devel gnutls-devel jansson-devel
-```
-
-#### For Debian (unstable / testing)
-```
-apt build-dep wayvnc
-```
-
-#### For Ubuntu
-```
-apt install meson libdrm-dev libxkbcommon-dev libwlroots-dev libjansson-dev \
-	libpam0g-dev libgnutls28-dev libavfilter-dev libavcodec-dev \
-	libavutil-dev libturbojpeg0-dev scdoc
-```
-
-#### Additional build-time dependencies
-
-The easiest way to satisfy the neatvnc and aml dependencies is to link to them
-in the subprojects directory:
-```
-git clone https://github.com/any1/wayvnc.git
-git clone https://github.com/any1/neatvnc.git
-git clone https://github.com/any1/aml.git
-
-mkdir wayvnc/subprojects
-cd wayvnc/subprojects
-ln -s ../../neatvnc .
-ln -s ../../aml .
-cd -
-
-mkdir neatvnc/subprojects
-cd neatvnc/subprojects
-ln -s ../../aml .
-cd -
-```
-
-### Configure and Build
-```
-meson build
+```sh
+distrobox assemble create --replace --file distrobox.ini
+distrobox enter wayrdp-dev
+meson setup build
 ninja -C build
 ```
 
-To run the unit tests:
-```
-meson test -C build
+aml 1.0 is not packaged; meson fetches it as a subproject
+(`subprojects/aml.wrap`).
+
+## Tests
+
+```sh
+meson test -C build                       # unit tests
+MWC=/path/to/mwc test/mwc-probe.sh        # against mwc on a headless output
 ```
 
-To run the [integration tests](test/integration/README.md):
-```
-./test/integration/integration.sh
-```
+`test/mwc-probe.sh` starts mwc headless with a terminal that keeps drawing,
+runs `wayrdp --probe=3` against it and checks size and frame count.
+`--probe=<n>` captures n frames without a client, prints size, format, frame
+count and damage, and exits.
 
 ## Running
-Wayvnc can be run from the build directory like so:
-```
-./build/wayvnc
-```
 
-:radioactive: The server only accepts connections from localhost by default. To
-accept connections via any interface, set the address to `0.0.0.0` like this:
-```
-./build/wayvnc 0.0.0.0
+mwc must offer the virtual input protocols:
+
+```sh
+MWC_VIRTUAL_INPUT=1 WLR_BACKENDS=headless WLR_RENDERER=pixman mwc &
+wayrdp -k de -o HEADLESS-1 127.0.0.1 3390
 ```
 
-:warning: Do not do this on a public network or the internet without
-user authentication enabled. The best way to protect your VNC connection is to
-use SSH tunneling while listening on localhost, but users can also be
-authenticated when connecting to wayvnc.
+Options and config keys are listed in `wayrdp -h` and in the design document.
+The config file is `~/.config/wayrdp/config` (`key = value` lines).
 
-### Encryption & Authentication
+## License
 
-#### VeNCrypt (TLS)
-For TLS, you'll need a private X509 key and a certificate. A self-signed key
-with a certificate can be generated like so:
-```
-cd ~/.config/wayvnc
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:secp384r1 -sha384 \
-	-days 3650 -nodes -keyout tls_key.pem -out tls_cert.pem \
-	-subj /CN=localhost \
-	-addext subjectAltName=DNS:localhost,DNS:localhost,IP:127.0.0.1
-cd -
-```
-Replace `localhost` and `127.0.0.1` in the command above with your public facing
-host name and IP address, respectively, or just keep them as is if you're
-testing locally.
-
-Create a config with the authentication info and load it using the `--config`
-command line option or place it at the default location
-`$HOME/.config/wayvnc/config`.
-```
-use_relative_paths=true
-address=0.0.0.0
-enable_auth=true
-username=luser
-password=p455w0rd
-private_key_file=tls_key.pem
-certificate_file=tls_cert.pem
-```
-
-#### RSA-AES
-The RSA-AES security type combines RSA with AES in EAX mode to provide secure
-authentication and encryption that's resilient to eavesdropping and MITM. Its
-main weakness is that the user has to verify the server's credentials on first
-use. Thereafter, the client software should warn the user if the server's
-credentials change. It's a Trust on First Use (TOFU) scheme as employed by SSH.
-
-For the RSA-AES to be enabled, you need to generate an RSA key. This can be
-achieved like so:
-```
-ssh-keygen -m pem -f ~/.config/wayvnc/rsa_key.pem -t rsa -N ""
-```
-
-You also need to tell wayvnc where this file is located, by setting setting the
-`rsa_private_key_file` configuration parameter:
-```
-use_relative_paths=true
-address=0.0.0.0
-enable_auth=true
-username=luser
-password=p455w0rd
-rsa_private_key_file=rsa_key.pem
-```
-
-You may also add credentials for TLS in combination with RSA. The client will
-choose.
-
-#### DES Authentication (Legacy)
-
-:warning: DES authentication provides **no encryption** of the VNC session. It
-uses an outdated challenge-response scheme where only the first 8 characters of
-the password are used. This is **not secure** by any modern standard.
-
-This option exists solely for compatibility with VNC clients that support DES
-but do not support the absence of authentication, such as macOS Screen Sharing.
-
-If you need to support such clients, add the following to your config:
-```
-enable_auth=true
-password=p455w0rd
-relax_encryption=true
-allow_broken_crypto=true
-```
-
-DES authentication does not work when `enable_pam` is enabled, as PAM overrides
-password-based authentication.
-
-On a network you do not fully trust, use SSH tunneling or a VPN to provide
-encryption.
-
-### wayvncctl control socket
-
-To facilitate runtime interaction and control, wayvnc opens a unix domain socket
-at *$XDG_RUNTIME_DIR*/wayvncctl (or a fallback of /tmp/wayvncctl-*$UID*). A
-client can connect and exchange json-formatted IPC messages to query and control
-the running wayvnc instance.
-
-Use the `wayvncctl` utility to interact with this control socket from the
-command line.
-
-See the `wayvnc(1)` manpage for an in-depth description of the IPC protocol and
-the available commands, and `wayvncctl(1)` for more on the command line
-interface.
-
-There is also a handy event-loop mode that can be used to run commands when
-various events occur in wayvnc. See
-[examples/event-watcher](examples/event-watcher) for more details.
+ISC, like wayvnc. See [COPYING](COPYING).
