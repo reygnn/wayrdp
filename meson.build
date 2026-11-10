@@ -47,6 +47,9 @@ freerdp_server = dependency('freerdp-server3', version: freerdp_version,
 	include_type: 'system')
 winpr = dependency('winpr3', version: freerdp_version,
 	include_type: 'system')
+# makecert, for the self-signed certificate on first start.
+winpr_tools = dependency('winpr-tools3', version: freerdp_version,
+	include_type: 'system')
 
 aml_version = ['>=1.0.0', '<2.0.0']
 aml_project = subproject('aml', required: false, version: aml_version,
@@ -89,6 +92,10 @@ sources = [
 	'src/wayland.c',
 	'src/vec.c',
 	'src/rdp/server.c',
+	'src/rdp/listener.c',
+	'src/rdp/peer.c',
+	'src/rdp/encoder.c',
+	'src/rdp/auth.c',
 ]
 
 dependencies = [
@@ -104,6 +111,7 @@ dependencies = [
 	freerdp,
 	freerdp_server,
 	winpr,
+	winpr_tools,
 ]
 
 config = configuration_data()

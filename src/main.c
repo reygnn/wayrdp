@@ -52,6 +52,7 @@
 #include "output.h"
 #include "pointer.h"
 #include "rdp/server.h"
+#include "rdp/auth.h"
 #include "screencopy-interface.h"
 #include "seat.h"
 #include "strlcpy.h"
@@ -81,6 +82,7 @@ struct wayrdp {
 	/* --probe: capture this many frames, report and exit. */
 	int probe_frames;
 	int probe_done;
+	uint64_t probe_damage;
 
 	struct image_source* image_source;
 	struct screencopy* screencopy;
@@ -161,12 +163,31 @@ static void stop_capture(struct wayrdp* self)
 }
 
 /* Starts or stops the capture after a client came or went. */
-void wayrdp_update_capture(struct wayrdp* self)
+static void wayrdp_update_capture(struct wayrdp* self)
 {
-	if (capture_wanted(self))
-		start_capture(self, true);
-	else
+	if (capture_wanted(self)) {
+		if (!self->capturing)
+			start_capture(self, true);
+	} else {
 		stop_capture(self);
+		if (self->next_frame) {
+			wv_buffer_release(self->next_frame);
+			self->next_frame = NULL;
+		}
+	}
+}
+
+static void on_wants_frames_changed(void* userdata)
+{
+	wayrdp_update_capture(userdata);
+}
+
+static void tell_desktop_size(struct wayrdp* self)
+{
+	int width = 0, height = 0;
+	if (self->rdp && self->image_source && image_source_get_buffer_size(
+				self->image_source, &width, &height))
+		rdp_server_set_desktop_size(self->rdp, width, height);
 }
 
 static void on_capture_retry(struct aml_timer* timer)
@@ -211,14 +232,22 @@ static void frame_damage(const struct wayrdp* self, struct wv_buffer* buffer,
 			buffer->height);
 }
 
+static uint64_t region_area(struct pixman_region16* region)
+{
+	int n = 0;
+	const pixman_box16_t* box = pixman_region_rectangles(region, &n);
+	uint64_t area = 0;
+	for (int i = 0; i < n; ++i)
+		area += (uint64_t)(box[i].x2 - box[i].x1) * (box[i].y2 - box[i].y1);
+	return area;
+}
+
 static void probe_report(struct wayrdp* self, const struct wv_buffer* buffer)
 {
-	struct rdp_server_stats stats;
-	rdp_server_get_stats(self->rdp, &stats);
-	printf("%dx%d %.4s frames=%"PRIu32" damage=%"PRIu64"\n",
+	printf("%dx%d %.4s frames=%d damage=%"PRIu64"\n",
 			buffer->width, buffer->height,
-			(const char*)&buffer->format, stats.frames,
-			stats.damage_area);
+			(const char*)&buffer->format, self->probe_done,
+			self->probe_damage);
 	fflush(stdout);
 }
 
@@ -233,7 +262,9 @@ static void send_next_frame(struct wayrdp* self, uint64_t now)
 	pixman_region_init(&damage);
 	frame_damage(self, buffer, &damage);
 
-	rdp_frame_submit(self->rdp, buffer, &damage);
+	if (self->rdp)
+		rdp_frame_submit(self->rdp, buffer, &damage);
+	self->probe_damage += region_area(&damage);
 	pixman_region_fini(&damage);
 	self->last_send_time = now;
 
@@ -389,7 +420,8 @@ static int init_keyboard(struct wayrdp* self)
 static void on_selection_text(void* userdata, const char* text, size_t len)
 {
 	struct wayrdp* self = userdata;
-	rdp_server_set_selection_text(self->rdp, text, len);
+	if (self->rdp)
+		rdp_server_set_selection_text(self->rdp, text, len);
 }
 
 static void init_data_control(struct wayrdp* self)
@@ -494,6 +526,7 @@ static void switch_to_output(struct wayrdp* self, struct output* output)
 	}
 
 	set_image_source(self, &output->image_source);
+	tell_desktop_size(self);
 	if (!configure_screencopy(self)) {
 		wayrdp_exit(self, 1);
 		return;
@@ -719,6 +752,8 @@ int main(int argc, char* argv[])
 		{ .positional = "port",
 		  .help = "The port to listen on.",
 		  .default_ = "3389" },
+		{ 'a', "auth", "nla|pam",
+		  "Login: NLA against the password from --set-password (default), or PAM (M5)." },
 		{ 'C', "config", "<path>",
 		  "Select a config file. Default: ~/.config/wayrdp/config" },
 		{ 'f', "max-fps", "<fps>",
@@ -736,6 +771,8 @@ int main(int argc, char* argv[])
 		  "Capture this many frames without a client, print size and damage, exit." },
 		{ 'r', "render-cursor", NULL,
 		  "Draw the pointer into the picture." },
+		{ 0, "set-password", NULL,
+		  "Set the RDP password for nla and exit." },
 		{ 'v', NULL, NULL,
 		  "Print the version and exit." },
 		{}
@@ -772,6 +809,32 @@ int main(int argc, char* argv[])
 		else
 			wv_log(WV_LOG_ERROR, "Failed to load config: %m");
 		return 1;
+	}
+
+	const char* config_dir = rdp_config_dir();
+	char default_sam[4200], default_crt[4200], default_key[4200];
+	snprintf(default_sam, sizeof(default_sam), "%s/sam",
+			config_dir ? config_dir : ".");
+	snprintf(default_crt, sizeof(default_crt), "%s/tls.crt",
+			config_dir ? config_dir : ".");
+	snprintf(default_key, sizeof(default_key), "%s/tls.key",
+			config_dir ? config_dir : ".");
+	const char* sam_file = self.cfg.sam_file ? self.cfg.sam_file : default_sam;
+
+	if (option_parser_get_value(&parser, "set-password")) {
+		rc = rdp_auth_set_password(sam_file);
+		goto out;
+	}
+
+	const char* auth = option_parser_get_value(&parser, "auth");
+	if (!auth)
+		auth = self.cfg.auth ? self.cfg.auth : "nla";
+	if (strcmp(auth, "pam") == 0) {
+		wv_log(WV_LOG_ERROR, "auth=pam comes with M5; use nla");
+		goto out;
+	} else if (strcmp(auth, "nla") != 0) {
+		wv_log(WV_LOG_ERROR, "Unknown auth mode: %s", auth);
+		goto out;
 	}
 
 	/* The command line wins over the config file. */
@@ -847,13 +910,25 @@ int main(int argc, char* argv[])
 	struct rdp_server_config rdp_config = {
 		.address = address,
 		.port = port,
+		.certificate_file = self.cfg.certificate_file
+			? self.cfg.certificate_file : default_crt,
+		.private_key_file = self.cfg.private_key_file
+			? self.cfg.private_key_file : default_key,
+		.sam_file = sam_file,
+		.on_wants_frames_changed = on_wants_frames_changed,
+		.userdata = &self,
 	};
-	self.rdp = rdp_server_new(&rdp_config);
-	if (!self.rdp)
-		goto rdp_failure;
 
+	/* Connect to the compositor first: a client may come at once. */
 	if (attach_wayland(&self) < 0)
 		goto wayland_failure;
+
+	if (!self.probe_frames) {
+		self.rdp = rdp_server_new(&rdp_config);
+		if (!self.rdp)
+			goto rdp_failure;
+		tell_desktop_size(&self);
+	}
 
 	wayrdp_update_capture(&self);
 
@@ -868,10 +943,11 @@ int main(int argc, char* argv[])
 
 	wv_log(WV_LOG_INFO, "Exiting...");
 
+	rdp_server_destroy(self.rdp);
+	self.rdp = NULL;
+rdp_failure:
 	detach_wayland(&self);
 wayland_failure:
-	rdp_server_destroy(self.rdp);
-rdp_failure:
 	if (self.capture_retry_timer) {
 		aml_stop(aml, self.capture_retry_timer);
 		aml_unref(self.capture_retry_timer);
