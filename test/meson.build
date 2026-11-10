@@ -16,3 +16,16 @@ test('option-parser', executable('option-parser',
 	include_directories: inc,
 	dependencies: [ ],
 ))
+test('keymap', executable('keymap',
+	[
+		'keymap-test.c',
+		'../src/rdp/keymap.c',
+	],
+	include_directories: [inc, include_directories('../src')],
+	dependencies: [ ],
+))
+# Drives the compositor of the RDP client in test/mwc-rdp.sh.
+executable('vinput',
+	[ 'vinput.c' ],
+	dependencies: [ wayland_client, xkbcommon, client_protos ],
+)

@@ -13,24 +13,24 @@ design, milestones and open questions are in
 
 ## Status
 
-**M1 – picture.** wayrdp listens, logs in with NLA and sends the desktop as
-RemoteFX (Planar for clients without it), with frame markers and flow control.
-Keyboard and mouse don't work yet: that is M2.
+**M2 – input.** wayrdp logs in with NLA, sends the desktop as RemoteFX
+(Planar for clients without it), and takes keyboard, mouse and wheel. With
+that it is usable day to day (gate 2 of the design); the clipboard is M3.
 
-Tested against xfreerdp3 3.32 (see Tests). **Not yet tested with mstsc**, which
-is gate 1 of the design: does Windows' Remote Desktop take RemoteFX over
-surface bits smoothly?
+Tested against xfreerdp3 and wlfreerdp3 3.32 (see Tests). **Not yet tested
+with mstsc**, which is gate 1 of the design: does Windows' Remote Desktop take
+RemoteFX over surface bits smoothly?
 
 | Milestone | Content | State |
 |---|---|---|
 | M0 | Fork, neatvnc out, `wv_log()`, builds against FreeRDP 3, connects to mwc | done |
 | M1 | Listener, peer, TLS, NLA, RemoteFX, flow control | done, mstsc test open |
-| M2 | Keyboard, mouse, wheel, Synchronize, Unicode | |
+| M2 | Keyboard, mouse, wheel, Synchronize, Unicode | done, mstsc test open |
 | M3 | Clipboard in both directions | |
 | M4 | Size follows the mstsc window, pointer images | |
 | M5 | Hardening, `pam` mode, docs; replaces xrdp and wayvnc | |
 
-What M1 does:
+What M1 and M2 do:
 
 - **Login:** NLA (CredSSP/NTLM) against `~/.config/wayrdp/sam`, written by
   `wayrdp --set-password`. Only the user wayrdp runs as gets in. Three failed
@@ -48,6 +48,20 @@ What M1 does:
 - **Picture:** RemoteFX in 64×64 tiles, only the damaged ones, encoded in a
   worker thread; at most two frames unacknowledged (clients that never
   acknowledge are detected and served without waiting).
+- **Keyboard:** the client sends physical scancodes; wayrdp turns them into
+  Linux key codes (its own table in `src/rdp/keymap.c`: FreeRDP's
+  `freerdp_keyboard_get_x11_keycode_from_rdp_scancode()` is deprecated and
+  needs an X11 keyboard set up), and the layout on the server (`-k de`) says
+  what they mean. Pause, AltGr, the numeric keypad and the media keys are in
+  the table. Unicode events (on-screen keyboard, IME) are typed as keysyms;
+  characters the layout lacks are dropped.
+- **Synchronize:** when the mstsc window gets the focus back, every key still
+  held is released (nothing sticks after Alt-Tab on the notebook) and Caps,
+  Num and Scroll Lock are set to the notebook's.
+- **Mouse:** absolute position on the output, left/right/middle and the two
+  side buttons, vertical and horizontal wheel in 120ths of a notch (high
+  resolution wheels scroll smoothly). Keys and buttons are let go when the
+  client leaves or is replaced.
 
 Measured at 1920×1080 on an 8-core machine: idle 0 %, a terminal with a clock
 23 % of one core at 9 fps, a full-screen terminal scrolling without pause 88 %
@@ -76,17 +90,23 @@ MWC=/path/to/mwc test/mwc-probe.sh      # M0: capture from mwc, no client
 MWC=/path/to/mwc test/mwc-rdp.sh        # M1: end to end with xfreerdp3
 ```
 
-`test/mwc-rdp.sh` starts mwc headless with a magenta desktop and a terminal,
-serves it with wayrdp, and checks:
+`test/mwc-rdp.sh` starts mwc headless with a magenta desktop and two
+terminals, serves it with wayrdp, and checks:
 
 - NLA with the right and a wrong password (`xfreerdp3 +auth-only`)
-- a second mwc runs xfreerdp3 through Xwayland, and a screenshot of it shows
-  the magenta desktop
+- a second mwc runs wlfreerdp3, and a screenshot of it shows the magenta
+  desktop
+- `build/test/vinput` moves and clicks in the second mwc, and types physical
+  keys there: A's pointer lands on the pixel, the click focuses a terminal in
+  A, and what it gets is "Hallo Welt äöüß@€/zyAb" with `-k de` (umlauts,
+  AltGr, Shift, Y/Z, Caps Lock); a wheel notch arrives
 - the client follows when the output changes size
 - a second login replaces the session
 - three wrong passwords lock the next connection out
 
-Variants: `CLIENT_SIZE=800x600` (the client is resized to the output),
+Variants: `CLIENT=xfreerdp3` (through Xwayland; picture only, it passes the
+pointer on once and then no more), `CLIENT_SIZE=800x600` (the client is
+resized to the output),
 `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the fallback; xfreerdp3 always
 offers RemoteFX), `WAYRDP_WRAP="valgrind --log-file=…"`.
 

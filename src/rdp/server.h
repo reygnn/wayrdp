@@ -29,6 +29,27 @@ struct wv_buffer;
 struct pixman_region16;
 struct rdp_server;
 
+/* Input from the active client, already in Linux terms. */
+struct rdp_input_handler {
+	/* code: KEY_* from linux/input-event-codes.h */
+	void (*key)(void* userdata, uint32_t code, bool pressed);
+	/* From the Unicode keyboard events (on-screen keyboard, IME). */
+	void (*keysym)(void* userdata, uint32_t keysym, bool pressed);
+	/* Releases every key the client pressed, e.g. after Alt-Tab on the
+	 * client's side, or when the client goes. */
+	void (*release_all)(void* userdata);
+	/* RDP_SYNC_* from rdp/keymap.h: the lock keys as the client has them. */
+	void (*sync_locks)(void* userdata, uint32_t locks);
+	/* x, y from 0 to 1 over the desktop. */
+	void (*motion)(void* userdata, double x, double y);
+	/* code: BTN_LEFT, … */
+	void (*button)(void* userdata, uint32_t code, bool pressed);
+	/* value120: 120 is one notch; positive is down or right. */
+	void (*axis)(void* userdata, bool horizontal, int32_t value120);
+	/* Ends a group of pointer events. */
+	void (*frame)(void* userdata);
+};
+
 struct rdp_server_config {
 	const char* address;
 	uint16_t port;
@@ -39,6 +60,7 @@ struct rdp_server_config {
 	/* The client came, went, minimised or restored: the capture should
 	 * start or stop, see rdp_server_wants_frames(). */
 	void (*on_wants_frames_changed)(void* userdata);
+	const struct rdp_input_handler* input;
 	void* userdata;
 };
 

@@ -514,6 +514,17 @@ void keyboard_feed_code(struct keyboard* self, xkb_keycode_t code,
 	}
 }
 
+void keyboard_release_all(struct keyboard* self)
+{
+	/* keyboard_feed_code() takes each key out of key_state. */
+	size_t guard = self->key_state.len;
+	while (self->key_state.len > 0 && guard-- > 0) {
+		xkb_keycode_t code =
+			self->key_state.storage[self->key_state.len - 1];
+		keyboard_feed_code(self, code, false);
+	}
+}
+
 enum keyboard_led_state keyboard_get_led_state(
 		const struct keyboard* self)
 {

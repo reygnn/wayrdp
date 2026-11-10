@@ -373,7 +373,7 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	update->SuppressOutput = on_suppress_output;
 	update->SurfaceFrameAcknowledge = on_frame_ack;
 
-	/* Input comes with M2; FreeRDP ignores events without a handler. */
+	rdp_input_register(self);
 
 	if (!client->Initialize(client))
 		goto failure;

@@ -36,6 +36,7 @@
 #include "sys/queue.h"
 #include "rdp/server.h"
 #include "rdp/auth.h"
+#include "rdp/keymap.h"
 
 struct aml_handler;
 struct aml_idle;
@@ -74,6 +75,11 @@ struct rdp_peer {
 	uint32_t frames_sent;
 	uint64_t bytes_sent;
 	uint64_t connected_us;
+
+	struct rdp_key_decoder key_decoder;
+	struct rdp_utf16_decoder utf16_decoder;
+	/* Buttons this client holds down, to let go when it goes. */
+	uint32_t buttons;
 };
 
 LIST_HEAD(rdp_peer_list, rdp_peer);
@@ -171,6 +177,11 @@ bool rdp_peer_resize(struct rdp_peer* self, uint32_t width, uint32_t height);
 bool rdp_peer_size_matches(const struct rdp_peer* self, uint32_t width,
 		uint32_t height);
 enum rdp_codec rdp_peer_codec(const struct rdp_peer* self);
+
+/* input.c */
+void rdp_input_register(struct rdp_peer* self);
+/* Lets go of the keys and buttons this client holds. */
+void rdp_input_release(struct rdp_peer* self);
 
 /* encoder.c */
 int rdp_encoder_init(struct rdp_encoder* self);

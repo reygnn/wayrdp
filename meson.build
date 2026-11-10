@@ -96,6 +96,8 @@ sources = [
 	'src/rdp/peer.c',
 	'src/rdp/encoder.c',
 	'src/rdp/auth.c',
+	'src/rdp/keymap.c',
+	'src/rdp/input.c',
 ]
 
 dependencies = [

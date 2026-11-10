@@ -183,6 +183,9 @@ void rdp_server_peer_logged_on(struct rdp_server* self, struct rdp_peer* peer)
 
 	/* One connection at a time: the new one takes over, as when mstsc
 	 * reconnects. Only now, so a failed login can't throw anyone out. */
+	if (self->active && self->active != peer)
+		rdp_input_release(self->active);
+
 	struct rdp_peer* other;
 	LIST_FOREACH(other, &self->peers, link) {
 		if (other != peer && !other->closing) {
@@ -219,6 +222,8 @@ void rdp_server_peer_gone(struct rdp_server* self, struct rdp_peer* peer)
 		rdp_auth_failure(&self->auth, gettime_us());
 
 	if (self->active == peer) {
+		/* Nothing stays pressed when the client goes. */
+		rdp_input_release(peer);
 		self->active = NULL;
 		/* No one looks; the next client starts from a fresh capture. */
 		drop_current(self);

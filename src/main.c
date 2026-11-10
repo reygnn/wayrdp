@@ -37,6 +37,7 @@
 #include <wayland-client.h>
 #include <libdrm/drm_fourcc.h>
 #include <xkbcommon/xkbcommon.h>
+#include <linux/input-event-codes.h>
 
 #include "virtual-keyboard-unstable-v1.h"
 #include "wlr-virtual-pointer-unstable-v1.h"
@@ -53,6 +54,7 @@
 #include "pointer.h"
 #include "rdp/server.h"
 #include "rdp/auth.h"
+#include "rdp/keymap.h"
 #include "screencopy-interface.h"
 #include "seat.h"
 #include "strlcpy.h"
@@ -416,6 +418,96 @@ static int init_keyboard(struct wayrdp* self)
 	}
 	return 0;
 }
+
+/* From the RDP side. evdev codes are xkb codes minus 8. */
+static void on_input_key(void* userdata, uint32_t code, bool pressed)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		keyboard_feed_code(&self->keyboard, code + 8, pressed);
+}
+
+static void on_input_keysym(void* userdata, uint32_t keysym, bool pressed)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		keyboard_feed(&self->keyboard, keysym, pressed);
+}
+
+static void on_input_release_all(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		keyboard_release_all(&self->keyboard);
+}
+
+/* Presses a lock key once where the session differs from the client. */
+static void on_input_sync_locks(void* userdata, uint32_t locks)
+{
+	struct wayrdp* self = userdata;
+	if (!self->have_input)
+		return;
+
+	static const struct {
+		uint32_t rdp;
+		enum keyboard_led_state led;
+		uint32_t key;
+	} map[] = {
+		{ RDP_SYNC_CAPS_LOCK, KEYBOARD_LED_CAPS_LOCK, KEY_CAPSLOCK },
+		{ RDP_SYNC_NUM_LOCK, KEYBOARD_LED_NUM_LOCK, KEY_NUMLOCK },
+		{ RDP_SYNC_SCROLL_LOCK, KEYBOARD_LED_SCROLL_LOCK, KEY_SCROLLLOCK },
+	};
+
+	enum keyboard_led_state leds = keyboard_get_led_state(&self->keyboard);
+	for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); ++i) {
+		bool want = locks & map[i].rdp;
+		bool have = leds & map[i].led;
+		if (want == have)
+			continue;
+		keyboard_feed_code(&self->keyboard, map[i].key + 8, true);
+		keyboard_feed_code(&self->keyboard, map[i].key + 8, false);
+	}
+}
+
+static void on_input_motion(void* userdata, double x, double y)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		pointer_motion(&self->pointer, x, y);
+}
+
+static void on_input_button(void* userdata, uint32_t code, bool pressed)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		pointer_button(&self->pointer, code, pressed);
+}
+
+static void on_input_axis(void* userdata, bool horizontal, int32_t value120)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		pointer_axis(&self->pointer, horizontal ? POINTER_AXIS_HORIZONTAL
+				: POINTER_AXIS_VERTICAL, value120);
+}
+
+static void on_input_frame(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_input)
+		pointer_frame(&self->pointer);
+}
+
+static const struct rdp_input_handler input_handler = {
+	.key = on_input_key,
+	.keysym = on_input_keysym,
+	.release_all = on_input_release_all,
+	.sync_locks = on_input_sync_locks,
+	.motion = on_input_motion,
+	.button = on_input_button,
+	.axis = on_input_axis,
+	.frame = on_input_frame,
+};
 
 static void on_selection_text(void* userdata, const char* text, size_t len)
 {
@@ -916,6 +1008,7 @@ int main(int argc, char* argv[])
 			? self.cfg.private_key_file : default_key,
 		.sam_file = sam_file,
 		.on_wants_frames_changed = on_wants_frames_changed,
+		.input = &input_handler,
 		.userdata = &self,
 	};
 

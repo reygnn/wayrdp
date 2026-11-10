@@ -13,8 +13,9 @@ wayrdp - An RDP server for wlroots-based Wayland compositors.
 wayrdp captures an output of the compositor in $WAYLAND_DISPLAY and serves it
 over RDP. The default address is 127.0.0.1, the default port 3389.
 
-Logins use NLA against a password set with *--set-password*. Keyboard and
-mouse arrive with milestone M2.
+Logins use NLA against a password set with *--set-password*. The client's
+keys arrive as physical scancodes; *-k* sets the layout that gives them
+meaning.
 
 # OPTIONS
 

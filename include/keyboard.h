@@ -53,3 +53,5 @@ enum keyboard_led_state {
 };
 
 enum keyboard_led_state keyboard_get_led_state(const struct keyboard*);
+/* Releases every key that was pressed through this keyboard. */
+void keyboard_release_all(struct keyboard* self);
