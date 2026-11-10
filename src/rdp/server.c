@@ -95,6 +95,7 @@ struct rdp_server* rdp_server_new(const struct rdp_server_config* config)
 
 	self->config = *config;
 	LIST_INIT(&self->peers);
+	LIST_INIT(&self->writers);
 	pixman_region_init(&self->pending);
 	self->next_serial = 1;
 
@@ -160,6 +161,7 @@ void rdp_server_destroy(struct rdp_server* self)
 	drop_current(self);
 	pixman_region_fini(&self->pending);
 	rdp_encoder_fini(&self->encoder);
+	rdp_clipboard_writers_destroy(self);
 	free(self);
 }
 
@@ -222,8 +224,11 @@ void rdp_server_peer_gone(struct rdp_server* self, struct rdp_peer* peer)
 		rdp_auth_failure(&self->auth, gettime_us());
 
 	if (self->active == peer) {
-		/* Nothing stays pressed when the client goes. */
+		/* Nothing stays pressed when the client goes, and its
+		 * clipboard isn't the session's any more. */
 		rdp_input_release(peer);
+		if (peer->client_has_text && self->config.clipboard)
+			self->config.clipboard->withdraw(self->config.userdata);
 		self->active = NULL;
 		/* No one looks; the next client starts from a fresh capture. */
 		drop_current(self);
@@ -448,10 +453,19 @@ void rdp_frame_submit(struct rdp_server* self, struct wv_buffer* buffer,
 	rdp_server_schedule(self);
 }
 
-void rdp_server_set_selection_text(struct rdp_server* self, const char* text,
-		size_t len)
+void rdp_server_clipboard_changed(struct rdp_server* self, bool has_text)
 {
-	wv_trace("Selection changed (%zu bytes); clipboard comes in M3", len);
+	self->session_has_text = has_text;
+	if (self->active)
+		rdp_clipboard_announce(self->active);
+}
+
+void rdp_server_clipboard_paste(struct rdp_server* self, int fd)
+{
+	if (self->active)
+		rdp_clipboard_paste(self->active, fd);
+	else
+		close(fd);
 }
 
 void rdp_server_get_stats(const struct rdp_server* self,

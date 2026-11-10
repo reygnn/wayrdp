@@ -50,6 +50,21 @@ struct rdp_input_handler {
 	void (*frame)(void* userdata);
 };
 
+/* The session's clipboard, for the client. */
+struct rdp_clipboard_handler {
+	/* The client copied text: make it the session's clipboard. A paste
+	 * then comes back as rdp_server_clipboard_paste(). */
+	void (*offer)(void* userdata);
+	/* The client's clipboard has no text any more, or the client left. */
+	void (*withdraw)(void* userdata);
+	/* Reads the session's clipboard as UTF-8: done(cbdata, text, len),
+	 * text NULL on failure, later from the main loop. -1 if there is
+	 * nothing to read (done not called). */
+	int (*read)(void* userdata,
+			void (*done)(void* cbdata, const char* text, size_t len),
+			void* cbdata);
+};
+
 struct rdp_server_config {
 	const char* address;
 	uint16_t port;
@@ -61,6 +76,7 @@ struct rdp_server_config {
 	 * start or stop, see rdp_server_wants_frames(). */
 	void (*on_wants_frames_changed)(void* userdata);
 	const struct rdp_input_handler* input;
+	const struct rdp_clipboard_handler* clipboard;
 	void* userdata;
 };
 
@@ -81,9 +97,12 @@ void rdp_server_set_desktop_size(struct rdp_server* self, uint32_t width,
 void rdp_frame_submit(struct rdp_server* self, struct wv_buffer* buffer,
 		const struct pixman_region16* damage);
 
-/* Text copied in the session, for the client's clipboard (M3). */
-void rdp_server_set_selection_text(struct rdp_server* self, const char* text,
-		size_t len);
+/* The session's clipboard changed: text in it, or not. */
+void rdp_server_clipboard_changed(struct rdp_server* self, bool has_text);
+
+/* A program in the session pastes the client's text: the server writes it
+ * to fd as UTF-8 and closes it. */
+void rdp_server_clipboard_paste(struct rdp_server* self, int fd);
 
 struct rdp_server_stats {
 	uint32_t frames;

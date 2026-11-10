@@ -13,9 +13,10 @@ design, milestones and open questions are in
 
 ## Status
 
-**M2 – input.** wayrdp logs in with NLA, sends the desktop as RemoteFX
-(Planar for clients without it), and takes keyboard, mouse and wheel. With
-that it is usable day to day (gate 2 of the design); the clipboard is M3.
+**M3 – clipboard.** wayrdp logs in with NLA, sends the desktop as RemoteFX
+(Planar for clients without it), takes keyboard, mouse and wheel, and shares
+the clipboard both ways with full Unicode. Next is M4: the size following
+the mstsc window, and pointer images.
 
 Tested against xfreerdp3 and wlfreerdp3 3.32 (see Tests). **Not yet tested
 with mstsc**, which is gate 1 of the design: does Windows' Remote Desktop take
@@ -26,11 +27,11 @@ RemoteFX over surface bits smoothly?
 | M0 | Fork, neatvnc out, `wv_log()`, builds against FreeRDP 3, connects to mwc | done |
 | M1 | Listener, peer, TLS, NLA, RemoteFX, flow control | done, mstsc test open |
 | M2 | Keyboard, mouse, wheel, Synchronize, Unicode | done, mstsc test open |
-| M3 | Clipboard in both directions | |
+| M3 | Clipboard in both directions | done, mstsc test open |
 | M4 | Size follows the mstsc window, pointer images | |
 | M5 | Hardening, `pam` mode, docs; replaces xrdp and wayvnc | |
 
-What M1 and M2 do:
+What M1 to M3 do:
 
 - **Login:** NLA (CredSSP/NTLM) against `~/.config/wayrdp/sam`, written by
   `wayrdp --set-password`. Only the user wayrdp runs as gets in. Three failed
@@ -62,6 +63,14 @@ What M1 and M2 do:
   side buttons, vertical and horizontal wheel in 120ths of a notch (high
   resolution wheels scroll smoothly). Keys and buttons are let go when the
   client leaves or is replaced.
+- **Clipboard:** text as `CF_UNICODETEXT` (UTF-16, CRLF) on the RDP side and
+  UTF-8 with LF in the session, so umlauts, `€` and emoji survive both
+  ways. Nothing is copied ahead: a copy on one side only announces text,
+  the other side fetches it when something is pasted. Through
+  ext-data-control (or wlr-data-control), so it works with Wayland and,
+  through Xwayland, X programs. The primary selection (middle click) stays
+  in the session; RDP has none. At most 16 MiB; a side that doesn't answer
+  within 5 s gets nothing. Images and files are not part of v1.
 
 Measured at 1920×1080 on an 8-core machine: idle 0 %, a terminal with a clock
 23 % of one core at 9 fps, a full-screen terminal scrolling without pause 88 %
@@ -100,6 +109,10 @@ terminals, serves it with wayrdp, and checks:
   keys there: A's pointer lands on the pixel, the click focuses a terminal in
   A, and what it gets is "Hallo Welt äöüß@€/zyAb" with `-k de` (umlauts,
   AltGr, Shift, Y/Z, Caps Lock); a wheel notch arrives
+- a third mwc runs xfreerdp3 and takes the session over; `wl-copy` on one
+  side, `wl-paste` on the other, both ways, with umlauts, emoji, CJK and
+  several lines, and no echo (wlfreerdp3's clipboard turns text into
+  `\u` escapes, so it is xfreerdp3 here)
 - the client follows when the output changes size
 - a second login replaces the session
 - three wrong passwords lock the next connection out

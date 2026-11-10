@@ -509,12 +509,56 @@ static const struct rdp_input_handler input_handler = {
 	.frame = on_input_frame,
 };
 
-static void on_selection_text(void* userdata, const char* text, size_t len)
+/* The session's clipboard, from data-control to the RDP side and back. */
+static void on_selection_changed(void* userdata, bool has_text)
 {
 	struct wayrdp* self = userdata;
 	if (self->rdp)
-		rdp_server_set_selection_text(self->rdp, text, len);
+		rdp_server_clipboard_changed(self->rdp, has_text);
 }
+
+static void on_paste(void* userdata, int fd)
+{
+	struct wayrdp* self = userdata;
+	if (self->rdp)
+		rdp_server_clipboard_paste(self->rdp, fd);
+	else
+		close(fd);
+}
+
+static const struct data_control_callbacks data_control_callbacks = {
+	.on_selection_changed = on_selection_changed,
+	.on_paste = on_paste,
+};
+
+static void on_clipboard_offer(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_data_control)
+		data_control_offer(&self->data_control);
+}
+
+static void on_clipboard_withdraw(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->have_data_control)
+		data_control_withdraw(&self->data_control);
+}
+
+static int on_clipboard_read(void* userdata,
+		void (*done)(void*, const char*, size_t), void* cbdata)
+{
+	struct wayrdp* self = userdata;
+	if (!self->have_data_control)
+		return -1;
+	return data_control_read(&self->data_control, done, cbdata);
+}
+
+static const struct rdp_clipboard_handler clipboard_handler = {
+	.offer = on_clipboard_offer,
+	.withdraw = on_clipboard_withdraw,
+	.read = on_clipboard_read,
+};
 
 static void init_data_control(struct wayrdp* self)
 {
@@ -530,7 +574,7 @@ static void init_data_control(struct wayrdp* self)
 	}
 
 	data_control_init(&self->data_control, self->seat->wl_seat,
-			on_selection_text, self);
+			&data_control_callbacks, self);
 	self->have_data_control = true;
 }
 
@@ -1009,6 +1053,7 @@ int main(int argc, char* argv[])
 		.sam_file = sam_file,
 		.on_wants_frames_changed = on_wants_frames_changed,
 		.input = &input_handler,
+		.clipboard = &clipboard_handler,
 		.userdata = &self,
 	};
 
@@ -1021,6 +1066,11 @@ int main(int argc, char* argv[])
 		if (!self.rdp)
 			goto rdp_failure;
 		tell_desktop_size(&self);
+		/* data-control told about the clipboard before there was a
+		 * server to hear it. */
+		if (self.have_data_control)
+			rdp_server_clipboard_changed(self.rdp,
+					self.data_control.has_text);
 	}
 
 	wayrdp_update_capture(&self);

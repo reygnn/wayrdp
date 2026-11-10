@@ -32,6 +32,7 @@
 #include <freerdp/peer.h>
 #include <freerdp/codec/rfx.h>
 #include <freerdp/codec/planar.h>
+#include <freerdp/server/cliprdr.h>
 
 #include "sys/queue.h"
 #include "rdp/server.h"
@@ -80,9 +81,24 @@ struct rdp_peer {
 	struct rdp_utf16_decoder utf16_decoder;
 	/* Buttons this client holds down, to let go when it goes. */
 	uint32_t buttons;
+
+	/* Clipboard (clipboard.c) */
+	CliprdrServerContext* cliprdr;
+	struct aml_handler* cliprdr_handler;
+	bool clip_ready;
+	bool client_has_text;
+	/* Pastes waiting for the client's answer. */
+	int paste_fds[8];
+	int n_paste_fds;
+	bool paste_requested;
+	struct aml_timer* paste_timer;
 };
 
 LIST_HEAD(rdp_peer_list, rdp_peer);
+
+/* Writes a paste to a program, maybe in several goes. */
+struct rdp_fd_writer;
+LIST_HEAD(rdp_fd_writer_list, rdp_fd_writer);
 
 struct rdp_peer_context {
 	rdpContext base;
@@ -141,6 +157,9 @@ struct rdp_server {
 
 	struct rdp_auth auth;
 	struct rdp_peer_list peers;
+	/* Whether the session's clipboard has text, for the next client. */
+	bool session_has_text;
+	struct rdp_fd_writer_list writers;
 	struct rdp_peer* active;
 	uint64_t next_serial;
 
@@ -182,6 +201,15 @@ enum rdp_codec rdp_peer_codec(const struct rdp_peer* self);
 void rdp_input_register(struct rdp_peer* self);
 /* Lets go of the keys and buttons this client holds. */
 void rdp_input_release(struct rdp_peer* self);
+
+/* clipboard.c */
+/* Opens the channel once the client has joined it (from Activate). */
+void rdp_clipboard_open(struct rdp_peer* self);
+void rdp_clipboard_close(struct rdp_peer* self);
+/* The session's clipboard changed: tell the client. */
+void rdp_clipboard_announce(struct rdp_peer* self);
+void rdp_clipboard_paste(struct rdp_peer* self, int fd);
+void rdp_clipboard_writers_destroy(struct rdp_server* server);
 
 /* encoder.c */
 int rdp_encoder_init(struct rdp_encoder* self);

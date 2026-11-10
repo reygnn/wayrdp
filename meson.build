@@ -98,6 +98,8 @@ sources = [
 	'src/rdp/auth.c',
 	'src/rdp/keymap.c',
 	'src/rdp/input.c',
+	'src/rdp/clipboard.c',
+	'src/rdp/text.c',
 ]
 
 dependencies = [

@@ -9,6 +9,8 @@
 #  - test/vinput moves, clicks and types in B, on the client window; A's
 #    pointer, focus and a terminal running cat must show it, German layout
 #    on wayrdp's side (-k de).
+#  - mwc "C" runs xfreerdp3, which replaces B's session; wl-copy in one,
+#    wl-paste in the other, both ways, Unicode and several lines; no echo.
 #
 #   MWC=/path/to/mwc test/mwc-rdp.sh [build/wayrdp]
 #
@@ -21,8 +23,8 @@
 # replaces the session, and three wrong passwords lock the next connection
 # out.
 #
-# Needs mwc, foot, Xwayland, xfreerdp3, wlfreerdp3 and grim, and
-# build/test/vinput. WAYRDP_WRAP goes in front of
+# Needs mwc, foot, Xwayland, xfreerdp3, wlfreerdp3, grim and wl-clipboard,
+# and build/test/vinput. WAYRDP_WRAP goes in front of
 # wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
@@ -37,7 +39,7 @@ EXPECT_CODEC=${EXPECT_CODEC:-RemoteFX}
 # the input on. xfreerdp3 under Xwayland in mwc sends the pointer once and
 # then no more, so the input part runs only with wlfreerdp3.
 CLIENT=${CLIENT:-wlfreerdp3}
-for tool in foot xfreerdp3 "$CLIENT" grim Xwayland python3; do
+for tool in foot xfreerdp3 "$CLIENT" grim Xwayland python3 wl-copy wl-paste; do
 	command -v $tool >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
 [ -x "$WAYRDP" ] || { echo "FAIL: $WAYRDP not built"; exit 1; }
@@ -145,9 +147,9 @@ if [ "$CLIENT_SIZE" != 1024x768 ]; then
 	min_share=10
 fi
 
-# Frames take a moment to arrive and be drawn.
+# Frames take a moment to arrive and be drawn (longer under valgrind).
 ok=
-for ((i = 0; i < 20; i++)); do
+for ((i = 0; i < 40; i++)); do
 	sleep 0.5
 	XDG_RUNTIME_DIR=$dir/b/run WAYLAND_DISPLAY=wayland-0 grim -t ppm "$dir/b.ppm" 2>/dev/null || continue
 	share=$(python3 -I - "$dir/b.ppm" <<'PY'
@@ -287,7 +289,66 @@ if [ "$CLIENT_SIZE" = 1024x768 ] && [ "$CLIENT" = wlfreerdp3 ] && [ -x "$VINPUT"
 	fi
 
 	eval "exec ${VIN[1]}>&-"
+
 fi
+
+# ---- clipboard ------------------------------------------------------------
+# With xfreerdp3 in a third mwc, C, whose login replaces B's session:
+# wlfreerdp3's clipboard turns text into \u escapes.
+
+n_active=$(grep -c "active, 1024x768" "$dir/wayrdp.log")
+n_clip=$(grep -c "clipboard channel open" "$dir/wayrdp.log")
+start_mwc c 1400x1000 '#000000' \
+	"xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:1024x768 /log-level:WARN >$dir/client-c.log 2>&1"
+for ((i = 0; i < 150; i++)); do
+	[ "$(grep -c "active, 1024x768" "$dir/wayrdp.log")" -gt $n_active ] && break
+	sleep 0.2
+done
+[ "$(grep -c "active, 1024x768" "$dir/wayrdp.log")" -gt $n_active ] || fail "the client in C never became active"
+for ((i = 0; i < 50; i++)); do
+	[ "$(grep -c "clipboard channel open" "$dir/wayrdp.log")" -gt $n_clip ] && break
+	sleep 0.2
+done
+[ "$(grep -c "clipboard channel open" "$dir/wayrdp.log")" -gt $n_clip ] || fail "no clipboard channel for C"
+echo "ok: C's client replaces B's"
+
+# wl_copy <mwc> <text>, wl_paste <mwc>
+wl_copy() { XDG_RUNTIME_DIR=$dir/$1/run WAYLAND_DISPLAY=wayland-0 wl-copy -- "$2"; }
+wl_paste() { XDG_RUNTIME_DIR=$dir/$1/run WAYLAND_DISPLAY=wayland-0 \
+	timeout 10 wl-paste -n 2>/dev/null; }
+# expect_paste <mwc> <text> <what>
+expect_paste() {
+	local got=
+	for ((i = 0; i < 25; i++)); do
+		got=$(wl_paste $1)
+		[ "$got" = "$2" ] && break
+		sleep 0.2
+	done
+	[ "$got" = "$2" ] || fail "$3: pasted '$got', wanted '$2'"
+	echo "ok: $3"
+}
+
+text_a="Grüße aus A – 😀 €"
+wl_copy a "$text_a"
+expect_paste c "$text_a" "copied in the session, pasted on the client"
+
+text_c="Hallo von C: äöü ß @ – 日本"
+wl_copy c "$text_c"
+expect_paste a "$text_c" "copied on the client, pasted in the session"
+
+# Several lines: LF in the session, CRLF on the wire, LF again.
+lines=$'Zeile 1\nZeile 2\n\nZeile 4'
+wl_copy a "$lines"
+expect_paste c "$lines" "several lines from the session"
+wl_copy c "$lines C"
+expect_paste a "$lines C" "several lines from the client"
+
+# No echo: one copy, one format list, not a loop.
+n=$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")
+sleep 1
+[ "$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")" = "$n" ] \
+	|| fail "the clipboard echoes"
+echo "ok: no clipboard echo"
 
 # The output changes size in the session (mwmrc reloaded): the client follows.
 sed -i 's/outputMode: .*/outputMode: 1280x720/' "$dir/a/config/mwc/mwmrc"

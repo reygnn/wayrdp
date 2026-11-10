@@ -91,6 +91,7 @@ void rdp_peer_destroy(struct rdp_peer* self)
 
 	LIST_REMOVE(self, link);
 	rdp_server_peer_gone(self->server, self);
+	rdp_clipboard_close(self);
 
 	if (self->activated || self->frames_sent)
 		wv_log(WV_LOG_INFO, "%s disconnected after %.0f s, %u frames, %.1f MB",
@@ -225,6 +226,7 @@ static BOOL on_activate(freerdp_peer* client)
 			self->frame_markers ? " with frame markers" : "");
 
 	rdp_server_peer_activated(server, self);
+	rdp_clipboard_open(self);
 	return TRUE;
 }
 
@@ -298,7 +300,7 @@ static bool apply_settings(struct rdp_peer* self)
 		{ FreeRDP_SupportGraphicsPipeline, false },
 		{ FreeRDP_SupportDisplayControl, false },
 		{ FreeRDP_DesktopResize, true },
-		{ FreeRDP_RedirectClipboard, false },
+		{ FreeRDP_RedirectClipboard, true },
 		{ FreeRDP_SuppressOutput, true },
 		{ FreeRDP_RefreshRect, true },
 		{ FreeRDP_UnicodeInput, true },
@@ -402,6 +404,7 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	return self;
 
 failure:
+	rdp_clipboard_close(self);
 	wv_log(WV_LOG_ERROR, "Can't set up the connection from %s",
 			client->hostname);
 	stop_handlers(self);

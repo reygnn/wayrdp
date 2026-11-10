@@ -29,3 +29,11 @@ executable('vinput',
 	[ 'vinput.c' ],
 	dependencies: [ wayland_client, xkbcommon, client_protos ],
 )
+test('text', executable('text',
+	[
+		'text-test.c',
+		'../src/rdp/text.c',
+	],
+	include_directories: [inc, include_directories('../src')],
+	dependencies: [ ],
+))
