@@ -114,6 +114,16 @@ echo "$PASSWORD" | XDG_CONFIG_HOME=$cfg "$WAYRDP" --set-password 2>/dev/null \
 	|| fail "--set-password"
 [ "$(stat -c %a "$cfg/wayrdp/sam")" = 600 ] || fail "SAM file is not 0600"
 
+# A SAM file others can read: wayrdp won't start.
+chmod 644 "$cfg/wayrdp/sam"
+if XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 XDG_CONFIG_HOME=$cfg \
+		timeout 20 "$WAYRDP" 127.0.0.1 "$PORT" >"$dir/perm.log" 2>&1; then
+	fail "wayrdp started with a SAM file others can read"
+fi
+grep -q "can be read by others" "$dir/perm.log" || fail "no reason given for the SAM file"
+chmod 600 "$cfg/wayrdp/sam"
+echo "ok: a SAM file others can read is refused"
+
 XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 XDG_CONFIG_HOME=$cfg \
 	${WAYRDP_WRAP:-} "$WAYRDP" -L ${WAYRDP_LOG:-debug} -k de ${WAYRDP_OPTS:-} 127.0.0.1 "$PORT" >"$dir/wayrdp.log" 2>&1 &
 pids+=($!)

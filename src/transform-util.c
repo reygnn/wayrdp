@@ -238,7 +238,8 @@ enum wl_output_transform wv_output_transform_compose(
 void wv_output_transform_canvas_point(enum wl_output_transform transform,
 		double* point_x, double* point_y)
 {
-	struct { double x, y; } dst;
+	/* A transform outside the enum leaves the point as it is. */
+	struct { double x, y; } dst = { *point_x, *point_y };
 
 	switch (transform) {
 	case WL_OUTPUT_TRANSFORM_NORMAL:

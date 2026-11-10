@@ -65,7 +65,15 @@ struct rdp_clipboard_handler {
 			void* cbdata);
 };
 
+enum rdp_auth_mode {
+	/* CredSSP against the SAM file (--set-password). */
+	RDP_AUTH_NLA,
+	/* TLS only; the credentials mstsc sends along, checked with PAM. */
+	RDP_AUTH_PAM,
+};
+
 struct rdp_server_config {
+	enum rdp_auth_mode auth;
 	const char* address;
 	uint16_t port;
 	const char* certificate_file;

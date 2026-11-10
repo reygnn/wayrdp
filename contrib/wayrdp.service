@@ -1,9 +1,11 @@
 # ~/.config/systemd/user/wayrdp.service
 #
-# wayrdp next to mwc.service, on port 3390 while xrdp still has 3389.
-# Once wayrdp does the job: drop the port (default 3389) and remove xrdp.
-# Run "wayrdp --set-password" first: it creates ~/.config/wayrdp, which
-# ReadWritePaths needs to exist.
+# wayrdp next to mwc.service (see README).
+#
+# Port 3390 while xrdp still has 3389. Once wayrdp does the job: drop the
+# port (the default is 3389) and remove xrdp and wayvnc.
+#
+# Run "wayrdp --set-password" first (for -a nla, the default).
 [Unit]
 Description=wayrdp for mwc
 BindsTo=mwc.service
@@ -15,11 +17,26 @@ ExecStart=/usr/local/bin/wayrdp -k de 127.0.0.1 3390
 # mwc's socket may not be there yet when this starts.
 Restart=on-failure
 RestartSec=1
+
+# FreeRDP parses what comes from the network in this process. These hold
+# in a user service too (seccomp and prctl):
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+# For -a pam remove this line: PAM checks the password with the setgid
+# helper unix_chkpwd.
+NoNewPrivileges=yes
+
+# These need a mount namespace. A user service on Ubuntu doesn't get one
+# (unprivileged user namespaces are restricted by AppArmor), and systemd
+# then skips them without a word: they protect nothing there. They do
+# where systemd can apply them.
 ProtectSystem=strict
 PrivateTmp=yes
 ReadWritePaths=%h/.config/wayrdp
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-NoNewPrivileges=yes
 
 [Install]
 WantedBy=mwc.service

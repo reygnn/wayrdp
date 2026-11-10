@@ -30,12 +30,27 @@ static void on_listener_event(struct aml_handler* handler)
 		wv_log(WV_LOG_WARNING, "Accepting a connection failed");
 }
 
-/* Before accept: refuse while locked out after failed logins. */
+/* Connections not logged on yet that may wait at a time. */
+#define MAX_PENDING 4
+
+/* Before accept: refuse while locked out after failed logins, or while
+ * too many connections wait for their logon. */
 static BOOL check_accept(freerdp_listener* listener)
 {
 	struct rdp_server* self = listener->info;
 	if (rdp_auth_is_locked(&self->auth, gettime_us())) {
 		wv_log(WV_LOG_WARNING, "Connection refused: locked after failed logins");
+		return FALSE;
+	}
+
+	int pending = 0;
+	struct rdp_peer* peer;
+	LIST_FOREACH(peer, &self->peers, link)
+		if (!peer->logged_on && !peer->closing)
+			++pending;
+	if (pending >= MAX_PENDING) {
+		wv_log(WV_LOG_WARNING, "Connection refused: %d are logging on already",
+				pending);
 		return FALSE;
 	}
 	return TRUE;

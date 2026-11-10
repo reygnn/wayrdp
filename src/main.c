@@ -1000,7 +1000,7 @@ int main(int argc, char* argv[])
 		  .help = "The port to listen on.",
 		  .default_ = "3389" },
 		{ 'a', "auth", "nla|pam",
-		  "Login: NLA against the password from --set-password (default), or PAM (M5)." },
+		  "Login: NLA against the password from --set-password (default), or the Linux password with PAM over TLS." },
 		{ 'C', "config", "<path>",
 		  "Select a config file. Default: ~/.config/wayrdp/config" },
 		{ 'f', "max-fps", "<fps>",
@@ -1076,9 +1076,13 @@ int main(int argc, char* argv[])
 	const char* auth = option_parser_get_value(&parser, "auth");
 	if (!auth)
 		auth = self.cfg.auth ? self.cfg.auth : "nla";
+	enum rdp_auth_mode auth_mode = RDP_AUTH_NLA;
 	if (strcmp(auth, "pam") == 0) {
-		wv_log(WV_LOG_ERROR, "auth=pam comes with M5; use nla");
-		goto out;
+		if (!rdp_auth_have_pam()) {
+			wv_log(WV_LOG_ERROR, "Built without PAM; use -a nla");
+			goto out;
+		}
+		auth_mode = RDP_AUTH_PAM;
 	} else if (strcmp(auth, "nla") != 0) {
 		wv_log(WV_LOG_ERROR, "Unknown auth mode: %s", auth);
 		goto out;
@@ -1155,6 +1159,7 @@ int main(int argc, char* argv[])
 		goto aml_failure;
 
 	struct rdp_server_config rdp_config = {
+		.auth = auth_mode,
 		.address = address,
 		.port = port,
 		.certificate_file = self.cfg.certificate_file

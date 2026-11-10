@@ -54,6 +54,16 @@ int rdp_auth_write_sam(const char* sam_file, const char* user,
  * and writes the SAM file. Returns the exit code. */
 int rdp_auth_set_password(const char* sam_file);
 
+/* Checks the password of user with PAM (service "wayrdp"), and that the
+ * account may log in. Blocks: pam_faildelay alone takes seconds. False
+ * without PAM support. */
+bool rdp_auth_pam(const char* user, const char* password);
+bool rdp_auth_have_pam(void);
+
+/* Refuses a secret that others can read: -1, with the reason logged.
+ * A missing file is fine (0). */
+int rdp_auth_check_private(const char* path);
+
 /* Lockout: three failures in a row lock new connections out for 30 s. */
 bool rdp_auth_is_locked(const struct rdp_auth* self, uint64_t now_us);
 void rdp_auth_failure(struct rdp_auth* self, uint64_t now_us);

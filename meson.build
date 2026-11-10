@@ -51,6 +51,9 @@ winpr = dependency('winpr3', version: freerdp_version,
 winpr_tools = dependency('winpr-tools3', version: freerdp_version,
 	include_type: 'system')
 
+libpam = cc.find_library('pam', required: get_option('pam'),
+	has_headers: ['security/pam_appl.h'])
+
 aml_version = ['>=1.0.0', '<2.0.0']
 aml_project = subproject('aml', required: false, version: aml_version,
 	default_options: ['default_library=static'])
@@ -121,6 +124,10 @@ dependencies = [
 	winpr_tools,
 ]
 
+if libpam.found()
+	dependencies += libpam
+endif
+
 config = configuration_data()
 
 config.set('PREFIX', '"' + prefix + '"')
@@ -142,6 +149,12 @@ endif
 
 if gbm.found() and not get_option('screencopy-dmabuf').disabled()
 	config.set('ENABLE_SCREENCOPY_DMABUF', true)
+endif
+
+if libpam.found()
+	config.set('ENABLE_PAM', true)
+	install_data('wayrdp.pam', rename: 'wayrdp',
+		install_dir: get_option('sysconfdir') / 'pam.d')
 endif
 
 configure_file(

@@ -104,14 +104,21 @@ struct rdp_server* rdp_server_new(const struct rdp_server_config* config)
 
 	wv_log(WV_LOG_INFO, "FreeRDP %s", rdp_freerdp_version());
 
-	if (access(config->sam_file, R_OK) != 0) {
-		wv_log(WV_LOG_ERROR, "No password set (%s missing). Run wayrdp --set-password first",
-				config->sam_file);
-		goto failure;
+	if (config->auth == RDP_AUTH_NLA) {
+		if (access(config->sam_file, R_OK) != 0) {
+			wv_log(WV_LOG_ERROR, "No password set (%s missing). Run wayrdp --set-password first",
+					config->sam_file);
+			goto failure;
+		}
+		if (rdp_auth_check_private(config->sam_file) < 0)
+			goto failure;
+	} else {
+		wv_log(WV_LOG_WARNING, "Logins with the Linux password (PAM) over TLS, without NLA");
 	}
 
 	if (rdp_auth_ensure_certificate(config->certificate_file,
-				config->private_key_file) < 0)
+				config->private_key_file) < 0
+			|| rdp_auth_check_private(config->private_key_file) < 0)
 		goto failure;
 	rdp_auth_log_fingerprint(config->certificate_file);
 
@@ -160,7 +167,7 @@ void rdp_server_destroy(struct rdp_server* self)
 	}
 
 	/* A job still in the worker holds the server; let it finish. */
-	while (self->encoding) {
+	while (self->encoding || self->pam_jobs > 0) {
 		aml_poll(aml_get_default(), 100000);
 		aml_dispatch(aml_get_default());
 	}

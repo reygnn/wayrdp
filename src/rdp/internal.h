@@ -66,6 +66,11 @@ struct rdp_peer {
 	/* The connection sequence is through (PostConnect). */
 	bool connected;
 	bool activated;
+	/* -a pam: the password is being checked; Activate waits for it. */
+	bool pam_pending;
+	bool activate_waiting;
+	/* Closes the connection if it doesn't log on in time. */
+	struct aml_timer* login_timer;
 	bool suppressed;
 	bool closing;
 
@@ -216,6 +221,8 @@ struct rdp_server {
 	bool encoder_reset;
 	struct aml_timer* ack_timer;
 	struct aml_ticker* stats_ticker;
+	/* PAM checks running in the worker. */
+	int pam_jobs;
 	uint64_t encode_us_sum;
 	uint32_t encode_count;
 	uint64_t bytes_window;

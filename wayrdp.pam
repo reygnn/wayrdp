@@ -1,0 +1,4 @@
+# /etc/pam.d/wayrdp: the Linux password, for wayrdp -a pam.
+# wayrdp only checks it; it opens no session.
+@include common-auth
+@include common-account

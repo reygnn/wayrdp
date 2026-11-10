@@ -63,6 +63,24 @@ static void stop_handlers(struct rdp_peer* self)
 	}
 }
 
+/* How long a connection may take to log on. WAYRDP_LOGIN_TIMEOUT (seconds)
+ * is for the tests. */
+static uint64_t login_timeout_us(void)
+{
+	const char* env = getenv("WAYRDP_LOGIN_TIMEOUT");
+	int s = env ? atoi(env) : 0;
+	return (uint64_t)(s > 0 ? s : 30) * 1000000;
+}
+
+static void on_login_timeout(struct aml_timer* timer)
+{
+	struct rdp_peer* self = aml_get_userdata(timer);
+	if (self->logged_on || self->closing)
+		return;
+	wv_log(WV_LOG_WARNING, "%s didn't log on in time", self->client->hostname);
+	rdp_peer_close(self);
+}
+
 static void on_close_idle(struct aml_idle* idle)
 {
 	rdp_peer_destroy(aml_get_userdata(idle));
@@ -84,6 +102,11 @@ void rdp_peer_close(struct rdp_peer* self)
 void rdp_peer_destroy(struct rdp_peer* self)
 {
 	stop_handlers(self);
+	if (self->login_timer) {
+		aml_stop(aml_get_default(), self->login_timer);
+		aml_unref(self->login_timer);
+		self->login_timer = NULL;
+	}
 	if (self->close_idle) {
 		aml_stop(aml_get_default(), self->close_idle);
 		aml_unref(self->close_idle);
@@ -146,6 +169,11 @@ static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identi
 {
 	struct rdp_peer* self = peer_from_context(client->context);
 
+	/* -a pam: TLS without NLA; the credentials come later, with the
+	 * client info, and are checked after PostConnect. */
+	if (self->server->config.auth == RDP_AUTH_PAM)
+		return !automatic;
+
 	if (!automatic) {
 		wv_log(WV_LOG_WARNING, "%s: logon without NLA refused", client->hostname);
 		return FALSE;
@@ -166,6 +194,115 @@ static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identi
 	return TRUE;
 }
 
+static BOOL activate(struct rdp_peer* self);
+
+/* ---- -a pam ---- */
+
+struct pam_job {
+	struct rdp_server* server;
+	uint64_t serial;
+	char* user;
+	char* password;
+	bool ok;
+};
+
+static void on_pam_work(struct aml_work* work)
+{
+	struct pam_job* job = aml_get_userdata(work);
+	job->ok = rdp_auth_pam(job->user, job->password);
+}
+
+static void on_pam_done(struct aml_work* work)
+{
+	struct pam_job* job = aml_get_userdata(work);
+	struct rdp_server* server = job->server;
+	server->pam_jobs--;
+
+	struct rdp_peer* self = NULL;
+	struct rdp_peer* p;
+	LIST_FOREACH(p, &server->peers, link)
+		if (p->serial == job->serial && !p->closing)
+			self = p;
+
+	if (self) {
+		self->pam_pending = false;
+		if (!job->ok) {
+			wv_log(WV_LOG_WARNING, "%s: wrong password for %s",
+					self->client->hostname, job->user);
+			rdp_peer_close(self);
+		} else {
+			wv_log(WV_LOG_INFO, "%s: logged on as %s (PAM)",
+					self->client->hostname, job->user);
+			self->logged_on = true;
+			rdp_server_peer_logged_on(server, self);
+			if (self->activate_waiting) {
+				self->activate_waiting = false;
+				if (!activate(self))
+					rdp_peer_close(self);
+			}
+		}
+	}
+}
+
+static void free_pam_job(void* userdata)
+{
+	struct pam_job* job = userdata;
+	if (job->password) {
+		memset(job->password, 0, strlen(job->password));
+		free(job->password);
+	}
+	free(job->user);
+	free(job);
+}
+
+/* The credentials mstsc sent along (saved credentials; without them it
+ * would need a login screen, which wayrdp doesn't have). */
+static bool start_pam(struct rdp_peer* self)
+{
+	freerdp_peer* client = self->client;
+	rdpSettings* settings = client->context->settings;
+	const char* user = freerdp_settings_get_string(settings, FreeRDP_Username);
+	const char* password = freerdp_settings_get_string(settings,
+			FreeRDP_Password);
+	const char* me = rdp_auth_user();
+
+	if (!user || !password || !password[0]) {
+		wv_log(WV_LOG_WARNING, "%s: no credentials sent along; save them in the client (-a pam has no login screen)",
+				client->hostname);
+		return false;
+	}
+	if (!me || strcasecmp(user, me) != 0) {
+		wv_log(WV_LOG_WARNING, "%s: user %s refused", client->hostname, user);
+		return false;
+	}
+
+	struct pam_job* job = calloc(1, sizeof(*job));
+	if (!job)
+		return false;
+	job->server = self->server;
+	job->serial = self->serial;
+	/* PAM wants the account's own spelling. */
+	job->user = strdup(me);
+	job->password = strdup(password);
+	/* The settings needn't keep it. */
+	freerdp_settings_set_string(settings, FreeRDP_Password, NULL);
+
+	struct aml_work* work = aml_work_new(on_pam_work, on_pam_done, job,
+			free_pam_job);
+	if (!job->user || !job->password || !work
+			|| aml_start(aml_get_default(), work) < 0) {
+		if (work)
+			aml_unref(work);
+		else
+			free_pam_job(job);
+		return false;
+	}
+	aml_unref(work);
+	self->server->pam_jobs++;
+	self->pam_pending = true;
+	return true;
+}
+
 static BOOL on_post_connect(freerdp_peer* client)
 {
 	struct rdp_peer* self = peer_from_context(client->context);
@@ -175,6 +312,10 @@ static BOOL on_post_connect(freerdp_peer* client)
 			freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
 			freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight),
 			freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
+
+	if (self->server->config.auth == RDP_AUTH_PAM && !self->logged_on
+			&& !self->pam_pending)
+		return start_pam(self);
 	return TRUE;
 }
 
@@ -199,11 +340,22 @@ enum rdp_codec rdp_peer_codec(const struct rdp_peer* self)
 static BOOL on_activate(freerdp_peer* client)
 {
 	struct rdp_peer* self = peer_from_context(client->context);
+	if (!self->logged_on) {
+		/* The password is still being checked. */
+		if (self->pam_pending) {
+			self->activate_waiting = true;
+			return TRUE;
+		}
+		return FALSE;
+	}
+	return activate(self);
+}
+
+static BOOL activate(struct rdp_peer* self)
+{
+	freerdp_peer* client = self->client;
 	struct rdp_server* server = self->server;
 	rdpSettings* settings = client->context->settings;
-
-	if (!self->logged_on)
-		return FALSE;
 
 	/* The output takes the client's size if it can; otherwise the client
 	 * gets the output's. */
@@ -319,9 +471,10 @@ static bool apply_settings(struct rdp_peer* self)
 		return false;
 
 	struct { FreeRDP_Settings_Keys_Bool key; bool value; } bools[] = {
-		/* NLA only: TLS with CredSSP against the SAM file. */
-		{ FreeRDP_NlaSecurity, true },
-		{ FreeRDP_TlsSecurity, false },
+		/* nla: TLS with CredSSP against the SAM file. pam: TLS only,
+		 * the credentials come with the client info. */
+		{ FreeRDP_NlaSecurity, config->auth == RDP_AUTH_NLA },
+		{ FreeRDP_TlsSecurity, config->auth == RDP_AUTH_PAM },
 		{ FreeRDP_RdpSecurity, false },
 		{ FreeRDP_ExtSecurity, false },
 		{ FreeRDP_RemoteFxCodec, true },
@@ -353,10 +506,10 @@ static bool apply_settings(struct rdp_peer* self)
 					| LARGE_POINTER_FLAG_384x384))
 		return false;
 
-	if (!freerdp_settings_set_string(settings, FreeRDP_NtlmSamFile,
-				config->sam_file)
-			|| !freerdp_settings_set_uint32(settings,
-				FreeRDP_ColorDepth, 32))
+	if (config->auth == RDP_AUTH_NLA && !freerdp_settings_set_string(
+				settings, FreeRDP_NtlmSamFile, config->sam_file))
+		return false;
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32))
 		return false;
 
 	if (self->server->width && self->server->height
@@ -438,6 +591,11 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	if (watch_handle(self, WTSVirtualChannelManagerGetEventHandle(ctx->vcm),
 				&self->vcm_handler) < 0)
 		goto failure;
+
+	self->login_timer = aml_timer_new(login_timeout_us(), on_login_timeout,
+			self, NULL);
+	if (self->login_timer)
+		aml_start(aml_get_default(), self->login_timer);
 
 	LIST_INSERT_HEAD(&server->peers, self, link);
 	wv_log(WV_LOG_INFO, "Connection from %s", client->hostname);

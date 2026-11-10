@@ -13,7 +13,8 @@ wayrdp - An RDP server for wlroots-based Wayland compositors.
 wayrdp captures an output of the compositor in $WAYLAND_DISPLAY and serves it
 over RDP. The default address is 127.0.0.1, the default port 3389.
 
-Logins use NLA against a password set with *--set-password*. The client's
+Logins use NLA against a password set with *--set-password*, or with *-a
+pam* the Linux password over TLS. The client's
 keys arrive as physical scancodes; *-k* sets the layout that gives them
 meaning.
 
@@ -21,7 +22,10 @@ meaning.
 
 *-a, --auth=nla|pam*
 	The login. *nla* (default): CredSSP against the password from
-	*--set-password*. *pam* comes with milestone M5.
+	*--set-password*. *pam*: TLS without NLA; the credentials the client
+	sends along (saved in mstsc) are checked with PAM, service *wayrdp*.
+	There is no login screen: without saved credentials the connection
+	is refused.
 
 *-C, --config=<path>*
 	Select a config file. Default: ~/.config/wayrdp/config
@@ -73,10 +77,22 @@ Options on the command line win.
 	The TLS certificate, made on the first start. Its SHA-1 thumbprint is
 	logged.
 
+*/etc/pam.d/wayrdp*
+	The PAM service for *-a pam*.
+
 # ENVIRONMENT
 
 *WAYRDP_FORCE_PLANAR=1*
 	Send Planar bitmaps even to clients that take RemoteFX. For tests.
+
+*WAYRDP_LOGIN_TIMEOUT=<seconds>*
+	How long a connection may take to log on (default 30). For tests.
+
+# SECURITY
+
+Three failed logins in a row lock new connections out for 30 s; at most
+four connections may wait for their logon at a time. wayrdp refuses to start
+when the SAM file or the TLS key can be read by others.
 
 # COMPOSITOR SUPPORT
 

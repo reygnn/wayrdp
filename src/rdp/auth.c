@@ -30,7 +30,12 @@
 #include <freerdp/crypto/certificate.h>
 
 #include "rdp/auth.h"
+#include "config.h"
 #include "log.h"
+
+#ifdef ENABLE_PAM
+#include <security/pam_appl.h>
+#endif
 
 #define MAX_FAILURES 3
 #define LOCKOUT_US (30 * 1000000ULL)
@@ -274,6 +279,101 @@ int rdp_auth_set_password(const char* sam_file)
 	fprintf(stderr, "Password for %s written to %s\n", user, sam_file);
 	return 0;
 }
+
+int rdp_auth_check_private(const char* path)
+{
+	struct stat st;
+	if (stat(path, &st) < 0)
+		return errno == ENOENT ? 0 : -1;
+	if (st.st_uid != getuid()) {
+		wv_log(WV_LOG_ERROR, "%s belongs to someone else", path);
+		return -1;
+	}
+	if (st.st_mode & 077) {
+		wv_log(WV_LOG_ERROR, "%s can be read by others (mode %03o); chmod 600 it",
+				path, st.st_mode & 0777);
+		return -1;
+	}
+	return 0;
+}
+
+#ifdef ENABLE_PAM
+static int pam_conversation(int n, const struct pam_message** msgs,
+		struct pam_response** responses, void* data)
+{
+	const char* password = data;
+	struct pam_response* r = calloc(n, sizeof(*r));
+	if (!r)
+		return PAM_BUF_ERR;
+
+	for (int i = 0; i < n; ++i) {
+		switch (msgs[i]->msg_style) {
+		case PAM_PROMPT_ECHO_OFF:
+		case PAM_PROMPT_ECHO_ON:
+			/* Only one thing to say: the password. */
+			r[i].resp = strdup(password);
+			if (!r[i].resp)
+				goto failure;
+			break;
+		case PAM_ERROR_MSG:
+		case PAM_TEXT_INFO:
+			break;
+		default:
+			goto failure;
+		}
+	}
+	*responses = r;
+	return PAM_SUCCESS;
+
+failure:
+	for (int i = 0; i < n; ++i) {
+		if (r[i].resp) {
+			memset(r[i].resp, 0, strlen(r[i].resp));
+			free(r[i].resp);
+		}
+	}
+	free(r);
+	return PAM_CONV_ERR;
+}
+
+bool rdp_auth_pam(const char* user, const char* password)
+{
+	struct pam_conv conv = {
+		.conv = pam_conversation,
+		.appdata_ptr = (void*)password,
+	};
+	pam_handle_t* pam = NULL;
+	int rc = pam_start("wayrdp", user, &conv, &pam);
+	if (rc != PAM_SUCCESS) {
+		wv_log(WV_LOG_ERROR, "PAM: %s", pam_strerror(pam, rc));
+		return false;
+	}
+
+	rc = pam_authenticate(pam, PAM_DISALLOW_NULL_AUTHTOK);
+	if (rc == PAM_SUCCESS)
+		rc = pam_acct_mgmt(pam, PAM_DISALLOW_NULL_AUTHTOK);
+	if (rc != PAM_SUCCESS)
+		wv_log(WV_LOG_WARNING, "PAM: %s for %s", pam_strerror(pam, rc), user);
+
+	pam_end(pam, rc);
+	return rc == PAM_SUCCESS;
+}
+
+bool rdp_auth_have_pam(void)
+{
+	return true;
+}
+#else
+bool rdp_auth_pam(const char* user, const char* password)
+{
+	return false;
+}
+
+bool rdp_auth_have_pam(void)
+{
+	return false;
+}
+#endif
 
 bool rdp_auth_is_locked(const struct rdp_auth* self, uint64_t now_us)
 {
