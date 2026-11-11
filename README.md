@@ -114,7 +114,8 @@ This follows mwc's `docs/WAYLAND-RDP.md`: mwc runs headless as a user
 service, reached through a Bitvise SSH tunnel. wayrdp takes RDP's port 3389
 in place of xrdp and wayvnc; there is no phase next to them, so it goes on the
 server only once it runs stable. mwc's `docs/wayland-rdp-upgrade.sh` does
-these steps.
+these steps. A server that already runs mwc with xrdp and a self-built wayvnc:
+[docs/upgrade-to-wayrdp.md](docs/upgrade-to-wayrdp.md).
 
 ### 1. Build and install
 
