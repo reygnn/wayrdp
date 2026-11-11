@@ -24,6 +24,8 @@
 #include <string.h>
 #include <freerdp/codec/rfx.h>
 #include <freerdp/codec/planar.h>
+#include <freerdp/codec/progressive.h>
+#include <freerdp/codec/region.h>
 #include <freerdp/constants.h>
 #include <winpr/stream.h>
 
@@ -43,7 +45,8 @@ int rdp_encoder_init(struct rdp_encoder* self)
 	self->planar = freerdp_bitmap_planar_context_new(
 			PLANAR_FORMAT_HEADER_RLE | PLANAR_FORMAT_HEADER_NA,
 			TILE, TILE);
-	if (!self->rfx || !self->planar) {
+	self->progressive = progressive_context_new(TRUE);
+	if (!self->rfx || !self->planar || !self->progressive) {
 		wv_log(WV_LOG_ERROR, "Can't create the codec contexts");
 		rdp_encoder_fini(self);
 		return -1;
@@ -57,8 +60,11 @@ void rdp_encoder_fini(struct rdp_encoder* self)
 		rfx_context_free(self->rfx);
 	if (self->planar)
 		freerdp_bitmap_planar_context_free(self->planar);
+	if (self->progressive)
+		progressive_context_free(self->progressive);
 	self->rfx = NULL;
 	self->planar = NULL;
+	self->progressive = NULL;
 }
 
 /* RemoteFX tiles are 64×64 and compress to well under this; with it, a
@@ -224,12 +230,77 @@ static bool encode_planar(struct rdp_encoder* self, struct rdp_encode_job* job)
 	return ok;
 }
 
+/*
+ * RemoteFX Progressive for the graphics pipeline: one message with every
+ * damaged tile, at full quality in one go (FreeRDP's encoder has no
+ * passes). It keeps no state between frames. The result lives in the
+ * context and is copied out, so the next frame can't overwrite it before
+ * it is sent.
+ */
+static bool encode_progressive(struct rdp_encoder* self,
+		struct rdp_encode_job* job)
+{
+	RFX_RECT* tiles = NULL;
+	int n_tiles = damaged_tiles(job, &tiles);
+	if (n_tiles <= 0) {
+		free(tiles);
+		return n_tiles == 0;
+	}
+
+	REGION16 region;
+	region16_init(&region);
+	bool ok = true;
+	for (int i = 0; i < n_tiles && ok; ++i) {
+		RECTANGLE_16 r = {
+			.left = tiles[i].x,
+			.top = tiles[i].y,
+			.right = tiles[i].x + tiles[i].width,
+			.bottom = tiles[i].y + tiles[i].height,
+		};
+		ok = region16_union_rect(&region, &region, &r);
+	}
+	free(tiles);
+	if (!ok) {
+		region16_uninit(&region);
+		return false;
+	}
+	job->bounds = *region16_extents(&region);
+
+	BYTE* data = NULL;
+	UINT32 size = 0;
+	int rc = progressive_compress(self->progressive, job->buffer->pixels,
+			job->stride * job->height, job->pixel_format, job->width,
+			job->height, job->stride, &region, &data, &size);
+	region16_uninit(&region);
+	if (rc < 0)
+		return false;
+	if (rc == 0 || size == 0)
+		return true;
+
+	job->messages = calloc(1, sizeof(*job->messages));
+	wStream* s = job->messages ? Stream_New(NULL, size) : NULL;
+	if (!s)
+		return false;
+	Stream_Write(s, data, size);
+	job->messages[0] = s;
+	job->n_messages = 1;
+	return true;
+}
+
 void rdp_encode(struct rdp_encoder* self, struct rdp_encode_job* job)
 {
 	uint64_t start = gettime_us();
-	job->ok = job->codec == RDP_CODEC_REMOTEFX
-		? encode_remotefx(self, job)
-		: encode_planar(self, job);
+	switch (job->codec) {
+	case RDP_CODEC_REMOTEFX:
+		job->ok = encode_remotefx(self, job);
+		break;
+	case RDP_CODEC_PLANAR:
+		job->ok = encode_planar(self, job);
+		break;
+	case RDP_CODEC_GFX_PROGRESSIVE:
+		job->ok = encode_progressive(self, job);
+		break;
+	}
 	job->encode_us = gettime_us() - start;
 }
 

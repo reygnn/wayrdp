@@ -38,36 +38,34 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Abnahme: eine Zeile im README unter den Messwerten, mit Bewegungen/s und
   Frames/s.
 
-* GFX-Pipeline (RDPGFX), damit mstsc einen sparsamen Codec nimmt. Der Entwurf
-  sah das als v2 vor; nach dem mstsc-Test ist es der wichtigste Punkt, vor
-  allem für den Firmentunnel (Planar ~15 Mbit/s bei einem gezogenen Fenster).
-  - Ubuntus FreeRDP 3.32 ist ohne H.264 gebaut (WITH_GFX_H264, OpenH264,
-    FFmpeg alle aus, freerdp/config.h). Ohne weitere Abhängigkeit gehen über
-    GFX: RemoteFX (RDPGFX_CODECID_CAVIDEO), RemoteFX Progressive
-    (progressive_compress), Planar, ClearCodec. H.264 (AVC420) nur mit einem
-    eigenen Encoder, z. B. x264 über libavcodec, und dem AVC420-Bitstream
-    (Metablock mit den Rechtecken, dann die NAL-Units) selbst gebaut.
-  - Vorschlag: zuerst GFX mit RemoteFX bzw. Progressive (gleicher Encoder wie
-    heute, nur ein anderer Transport), Bandbreite messen; AVC420 danach als
-    eigene Stufe, falls nötig.
-  - Server-Seite: freerdp/server/rdpgfx.h (rdpgfx_server_context_new auf der
-    vcm, nach drdynvc READY wie display.c), CapsAdvertise beantworten
-    (CapsConfirm mit der höchsten passenden Version, 10.x/8.1/8.0), dann
-    ResetGraphics, CreateSurface, MapSurfaceToOutput; je Frame StartFrame,
-    SurfaceCommand(s), EndFrame. Flusskontrolle über RDPGFX_FRAME_ACKNOWLEDGE
-    (queueDepth, SUSPEND_FRAME_ACKNOWLEDGEMENT), statt der Frame-Marker von
-    heute. Größenwechsel: ResetGraphics + neue Surface. Zeiger bleibt über die
-    alten Pointer-Updates.
-  - Vorlage: server/shadow/shadow_client.c in FreeRDP 3.32
-    (shadow_client_rdpgfx_caps_advertise, shadow_client_send_surface_gfx,
-    shadow_client_send_rfx/_progressive). Der Rdpgfx-Server läuft in FreeRDP
-    vermutlich wie disp mit eigenem Thread: prüfen und wie in display.c über
-    ein eventfd in die Hauptschleife holen.
-  - SupportGraphicsPipeline in peer.c (apply_settings) erst einschalten, wenn
-    der Pfad steht; Planar ohne GFX als Rückfall behalten.
-  Abnahme: test/mwc-rdp.sh mit xfreerdp3 /gfx bestätigt GFX und den Codec im
-  Log ("active, …, GFX …"); mstsc in der VM meldet GFX; die fps-Zeile beim
-  gezogenen Fenster zeigt deutlich weniger kB/s als Planar (Zahlen ins README).
+* GFX-Pipeline: Stufe 1 steht (Branch feature/gfx-pipeline, 2026-11-11).
+  src/rdp/gfx.c: Kanal ohne eigenen Thread in aml, CapsConfirm mit der
+  höchsten Version 10.7 … 8.0 (AVC aus), je Aktivierung ResetGraphics und
+  eine neue Surface, Frames als RemoteFX Progressive mit FRAME_ACKNOWLEDGE
+  (auch SUSPEND). Rückfall auf den alten Weg ohne Pipeline beim Client oder
+  ohne Caps in 3 s. test/mwc-rdp.sh erwartet jetzt GFX; grün auch mit
+  WAYRDP_NO_GFX=1, WAYRDP_FORCE_PLANAR=1, /gfx:frame-ack:off (sdl master)
+  und unter valgrind (0 Fehler, nichts verloren).
+  - Offen: mstsc in der VM. Abnahme: das Log meldet "active, …, GFX,
+    RemoteFX Progressive"; Bild, Größe nach Fenster, Wiederverbinden gehen;
+    die fps-Zeile beim deckend gezogenen Fenster mit Planar vergleichen
+    (gestern 1863 kB/s bei 7,9 fps) und ins README.
+  - Nicht getestet: der Rückfall nach 3 s ohne Caps (kein Client an der
+    Hand, der die Pipeline ankündigt und dann schweigt).
+  - Messung (Terminal scrollt, 1280x800, 30 fps): Progressive 6,8 MB/s,
+    RemoteFX alt 6,9 MB/s, Planar 9,3 MB/s. Bei Text bringt RemoteFX wenig.
+    Weitere Stufen, je nach mstsc-Messung:
+    - Quantisierung von RemoteFX gröber stellen (weniger Qualität, weniger
+      Bytes; FreeRDP nimmt die Standardwerte).
+    - AVC420 (H.264): braucht einen Encoder. Ubuntus FreeRDP 3.32 hat
+      keinen (WITH_GFX_H264 aus); ein eigenes FreeRDP mit OpenH264 liegt
+      zum Testen in ~/data/opt/freerdp-master. Für den Server also entweder
+      gegen ein eigenes FreeRDP bauen oder x264/libavcodec selbst
+      einbinden und den AVC420-Bitstream (Metablock, NAL-Units) selbst
+      bauen.
+    - SurfaceToSurface für Scrollen und den Bitmap-Cache (CacheToSurface)
+      nutzen: spart bei Text am meisten, braucht aber Wissen, was sich
+      verschoben hat.
 
 * Irreführende Warnung "The output didn't become WxH; staying at …". Kommt,
   wenn ein Client die Ausgabe auf seine Größe stellen lässt und dann gleich

@@ -117,6 +117,7 @@ void rdp_peer_destroy(struct rdp_peer* self)
 	rdp_server_peer_gone(self->server, self);
 	rdp_clipboard_close(self);
 	rdp_display_close(self);
+	rdp_gfx_close(self);
 
 	if (self->activated || self->frames_sent)
 		wv_log(WV_LOG_INFO, "%s disconnected after %.0f s, %u frames, %.1f MB",
@@ -159,6 +160,7 @@ static void on_peer_event(struct aml_handler* handler)
 		return;
 	}
 	rdp_display_check(self);
+	rdp_gfx_check(self);
 }
 
 /* After NLA. NTLM checked the password against the SAM file, which holds
@@ -321,6 +323,9 @@ static BOOL on_post_connect(freerdp_peer* client)
 
 enum rdp_codec rdp_peer_codec(const struct rdp_peer* self)
 {
+	if (self->gfx_ready)
+		return RDP_CODEC_GFX_PROGRESSIVE;
+
 	/* For the tests: every client at hand speaks RemoteFX. */
 	const char* force = getenv("WAYRDP_FORCE_PLANAR");
 	if (force && strcmp(force, "1") == 0)
@@ -351,6 +356,72 @@ static BOOL on_activate(freerdp_peer* client)
 	return activate(self);
 }
 
+static const char* codec_name(enum rdp_codec codec)
+{
+	switch (codec) {
+	case RDP_CODEC_REMOTEFX: return "RemoteFX";
+	case RDP_CODEC_PLANAR: return "Planar";
+	case RDP_CODEC_GFX_PROGRESSIVE: return "GFX, RemoteFX Progressive";
+	}
+	return "?";
+}
+
+/* After an activation, or when the way of sending changed (the graphics
+ * pipeline came up or was given up): the codec, flow control, the GFX
+ * surface, then a whole picture. */
+static bool start_output(struct rdp_peer* self)
+{
+	freerdp_peer* client = self->client;
+	rdpSettings* settings = client->context->settings;
+	uint32_t width = freerdp_settings_get_uint32(settings,
+			FreeRDP_DesktopWidth);
+	uint32_t height = freerdp_settings_get_uint32(settings,
+			FreeRDP_DesktopHeight);
+
+	enum rdp_codec codec = rdp_peer_codec(self);
+	if (codec == RDP_CODEC_GFX_PROGRESSIVE && self->frame_acks
+			&& !self->frame_markers) {
+		/* Still the pipeline: its frame ids go on, and acks for the
+		 * old surface may still come. */
+		self->last_ack = self->frame_id;
+	} else {
+		self->frame_markers = codec == RDP_CODEC_REMOTEFX
+			&& freerdp_settings_get_bool(settings,
+					FreeRDP_SurfaceFrameMarkerEnabled);
+		self->frame_acks = self->frame_markers
+			|| codec == RDP_CODEC_GFX_PROGRESSIVE;
+		self->ack_wait = self->frame_acks;
+		self->ack_seen = false;
+		self->frame_id = 0;
+		self->last_ack = 0;
+	}
+
+	if (codec == RDP_CODEC_GFX_PROGRESSIVE
+			&& !rdp_gfx_reset_surface(self, width, height))
+		return false;
+
+	if (rdp_gfx_pending(self)) {
+		wv_log(WV_LOG_INFO, "%s: active, %ux%u, waiting for the graphics pipeline",
+				client->hostname, width, height);
+		rdp_gfx_arm_timer(self);
+	} else {
+		wv_log(WV_LOG_INFO, "%s: active, %ux%u, %s%s", client->hostname,
+				width, height, codec_name(codec),
+				self->frame_markers ? " with frame markers" : "");
+	}
+
+	rdp_server_peer_activated(self->server, self);
+	return true;
+}
+
+void rdp_peer_reactivated(struct rdp_peer* self)
+{
+	if (!self->activated || self->closing)
+		return;
+	if (!start_output(self))
+		rdp_peer_close(self);
+}
+
 static BOOL activate(struct rdp_peer* self)
 {
 	freerdp_peer* client = self->client;
@@ -378,8 +449,9 @@ static BOOL activate(struct rdp_peer* self)
 		}
 	}
 
-	wv_log(WV_LOG_DEBUG, "%s: RemoteFX %d (id %u, mode %u, RLGR %u), surface commands 0x%x, frame markers %d, multifrag %u",
+	wv_log(WV_LOG_DEBUG, "%s: graphics pipeline %d, RemoteFX %d (id %u, mode %u, RLGR %u), surface commands 0x%x, frame markers %d, multifrag %u",
 			client->hostname,
+			freerdp_settings_get_bool(settings, FreeRDP_SupportGraphicsPipeline),
 			freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec),
 			freerdp_settings_get_uint32(settings, FreeRDP_RemoteFxCodecId),
 			freerdp_settings_get_uint32(settings, FreeRDP_RemoteFxCodecMode),
@@ -388,26 +460,12 @@ static BOOL activate(struct rdp_peer* self)
 			freerdp_settings_get_bool(settings, FreeRDP_SurfaceFrameMarkerEnabled),
 			freerdp_settings_get_uint32(settings, FreeRDP_MultifragMaxRequestSize));
 
-	enum rdp_codec codec = rdp_peer_codec(self);
-	self->frame_markers = codec == RDP_CODEC_REMOTEFX
-		&& freerdp_settings_get_bool(settings,
-				FreeRDP_SurfaceFrameMarkerEnabled);
-	self->ack_wait = self->frame_markers;
-	self->ack_seen = false;
-	self->frame_id = 0;
-	self->last_ack = 0;
 	self->suppressed = false;
 	self->activated = true;
 	if (!self->connected_us)
 		self->connected_us = gettime_us();
-
-	wv_log(WV_LOG_INFO, "%s: active, %ux%u, %s%s", client->hostname,
-			freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
-			freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight),
-			codec == RDP_CODEC_REMOTEFX ? "RemoteFX" : "Planar",
-			self->frame_markers ? " with frame markers" : "");
-
-	rdp_server_peer_activated(server, self);
+	if (!start_output(self))
+		return FALSE;
 	rdp_clipboard_open(self);
 	rdp_cursor_reset(self);
 	return TRUE;
@@ -481,7 +539,7 @@ static bool apply_settings(struct rdp_peer* self)
 		{ FreeRDP_NSCodec, false },
 		{ FreeRDP_SurfaceFrameMarkerEnabled, true },
 		{ FreeRDP_FrameMarkerCommandEnabled, true },
-		{ FreeRDP_SupportGraphicsPipeline, false },
+		{ FreeRDP_SupportGraphicsPipeline, rdp_gfx_offered() },
 		{ FreeRDP_SupportDisplayControl, true },
 		{ FreeRDP_DesktopResize, true },
 		{ FreeRDP_RedirectClipboard, true },
@@ -604,6 +662,7 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 failure:
 	rdp_clipboard_close(self);
 	rdp_display_close(self);
+	rdp_gfx_close(self);
 	wv_log(WV_LOG_ERROR, "Can't set up the connection from %s",
 			client->hostname);
 	stop_handlers(self);
@@ -615,12 +674,13 @@ failure:
 
 bool rdp_peer_wants_frames(const struct rdp_peer* self)
 {
-	return self->activated && !self->suppressed && !self->closing;
+	return self->activated && !self->suppressed && !self->closing
+		&& !rdp_gfx_pending(self);
 }
 
 uint32_t rdp_peer_frames_in_flight(const struct rdp_peer* self)
 {
-	if (!self->frame_markers)
+	if (!self->frame_acks)
 		return 0;
 	return self->frame_id - self->last_ack;
 }
@@ -761,10 +821,18 @@ static void send_planar(struct rdp_peer* self, const struct rdp_encode_job* job)
 
 void rdp_peer_send(struct rdp_peer* self, const struct rdp_encode_job* job)
 {
-	if (job->codec == RDP_CODEC_REMOTEFX)
+	switch (job->codec) {
+	case RDP_CODEC_REMOTEFX:
 		send_remotefx(self, job);
-	else
+		break;
+	case RDP_CODEC_PLANAR:
 		send_planar(self, job);
+		break;
+	case RDP_CODEC_GFX_PROGRESSIVE:
+		if (!rdp_gfx_send(self, job))
+			rdp_peer_close(self);
+		break;
+	}
 
 	if (!self->picture_sent && !self->closing) {
 		self->picture_sent = true;

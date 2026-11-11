@@ -41,10 +41,14 @@ place of xrdp and wayvnc.
 - **One session:** a new login replaces the old connection; a failed one
   throws no one out. The capture runs only while a client looks (not while
   mstsc is minimised).
-- **Picture:** RemoteFX in 64×64 tiles, only the damaged ones, encoded in a
-  worker thread; at most two frames unacknowledged (clients that never
-  acknowledge are detected and served without waiting). Planar bitmaps for
-  clients without RemoteFX.
+- **Picture:** over the graphics pipeline (MS-RDPEGFX, versions 8.0 to
+  10.7) as RemoteFX Progressive, which is how mstsc takes RemoteFX; for
+  clients without the pipeline, RemoteFX as surface bits, and Planar bitmaps
+  for those without RemoteFX either. 64×64 tiles, only the damaged ones,
+  encoded in a worker thread; at most two frames unacknowledged (clients
+  that never acknowledge, or suspend it, are served without waiting). No
+  H.264 yet. A client that announces the pipeline but sends no capabilities
+  within 3 s gets the old way.
 - **Keyboard:** the client sends physical scancodes; wayrdp turns them into
   Linux key codes, and the layout on the server (`-k de`) says what they
   mean. Pause, AltGr, the numeric keypad and the media keys are in the
@@ -81,6 +85,13 @@ place of xrdp and wayvnc.
 Measured at 1920×1080 on an 8-core machine: idle 0 %, a terminal with a clock
 23 % of one core at 9 fps, a full-screen terminal scrolling without pause 88 %
 of one core at 30 fps, 2.2 MB/s, 8 ms encoding per frame.
+
+A terminal scrolling without pause at 1280×800, 30 fps, sdl-freerdp3 on the
+same machine (2026-11-11): GFX with RemoteFX Progressive 6.8 MB/s, 3.8 ms
+encoding per frame, wayrdp 68 % of a core; RemoteFX as surface bits
+6.9 MB/s, 3.4 ms, 59 %; Planar 9.3 MB/s, 8.5 ms, 35 %. Text is the worst
+case for RemoteFX; mstsc took Planar before, since it offers RemoteFX only
+over the pipeline.
 
 ## Setting it up on the server
 
@@ -235,8 +246,10 @@ output's size), `CLIENT_SIZE=800x600`, `WAYRDP_OPTS=-r` (pointer in the
 picture), `CLIENT=xfreerdp3` (through Xwayland; no input part, it passes the
 pointer on once and then no more), `CLIENT=wlfreerdp3` (deprecated; it now
 and then hangs once pointer images come, and its clipboard turns text into
-`\u` escapes), `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the fallback;
-the FreeRDP clients always offer RemoteFX), `WAYRDP_WRAP="valgrind …"`.
+`\u` escapes), `WAYRDP_NO_GFX=1 EXPECT_CODEC=RemoteFX` (the old way, no
+graphics pipeline), `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the
+fallback; the FreeRDP clients always offer the pipeline and RemoteFX),
+`WAYRDP_WRAP="valgrind …"`.
 
 `test/pam-rdp.sh` needs `/etc/pam.d/wayrdp` and the password of the user
 running it: the right password gets the picture, a wrong and an empty one
@@ -257,6 +270,10 @@ in the log.
   the primary one too.
 - **drdynvc** is opened only after the connection sequence: FreeRDP sets it
   up once, and too early its first message lands in the licensing phase.
+- **Graphics pipeline:** planned as v2, done now, because mstsc offers
+  RemoteFX only through it. The channel runs on the main loop (FreeRDP's
+  external-thread mode), not in a thread of its own. On a size change the
+  client reactivates as before, then gets ResetGraphics and a new surface.
 - **The pointer** goes out only after the first picture of an activation.
 - **systemd:** see Security; the file-system options don't hold in a user
   service on Ubuntu.

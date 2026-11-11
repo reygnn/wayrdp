@@ -106,6 +106,7 @@ sources = [
 	'src/rdp/convert.c',
 	'src/rdp/display.c',
 	'src/rdp/cursor.c',
+	'src/rdp/gfx.c',
 ]
 
 dependencies = [

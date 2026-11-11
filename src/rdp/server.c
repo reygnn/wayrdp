@@ -361,8 +361,11 @@ static void on_encode_done(struct aml_work* work)
 	self->encoding = false;
 
 	struct rdp_peer* peer = self->active;
+	/* Encoded for a way of sending the client has left meanwhile:
+	 * dropped, the new one starts from a whole picture. */
 	if (job->ok && peer && peer->serial == job->peer_serial
-			&& rdp_peer_wants_frames(peer)) {
+			&& rdp_peer_wants_frames(peer)
+			&& job->codec == rdp_peer_codec(peer)) {
 		uint64_t before = peer->bytes_sent;
 		rdp_peer_send(peer, job);
 		self->stats.frames_sent++;

@@ -20,10 +20,11 @@
 #   MWC=/path/to/mwc test/mwc-rdp.sh [build/wayrdp]
 #
 # CLIENT_SIZE (default 1024x768) is what the client asks for; wayrdp makes
-# it 1024x768 either way. CLIENT_OPTS go to xfreerdp3. EXPECT_CODEC is what
-# wayrdp must report (RemoteFX); for the Planar fallback set
-# WAYRDP_FORCE_PLANAR=1 and EXPECT_CODEC=Planar, since xfreerdp3 always
-# offers RemoteFX.
+# it 1024x768 either way. CLIENT_OPTS go to the client in B. EXPECT_CODEC
+# is what wayrdp must report (GFX, the graphics pipeline); for the old way
+# set WAYRDP_NO_GFX=1 and EXPECT_CODEC=RemoteFX, for the Planar fallback
+# WAYRDP_FORCE_PLANAR=1 and EXPECT_CODEC=Planar (the FreeRDP clients always
+# offer the pipeline and RemoteFX).
 # Afterwards: the output changes size and the client follows, a second login
 # replaces the session, and three wrong passwords lock the next connection
 # out.
@@ -38,7 +39,7 @@ MWC=${MWC:-mwc}
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 CLIENT_SIZE=${CLIENT_SIZE:-1024x768}
 CLIENT_OPTS=${CLIENT_OPTS:-}
-EXPECT_CODEC=${EXPECT_CODEC:-RemoteFX}
+EXPECT_CODEC=${EXPECT_CODEC:-GFX}
 # The client in B: sdl-freerdp3, a Wayland client, passes the input on.
 # xfreerdp3 under Xwayland in mwc sends the pointer once and then no more,
 # so the input part doesn't run with it. wlfreerdp3 (deprecated upstream)
