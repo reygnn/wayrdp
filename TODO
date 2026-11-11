@@ -84,13 +84,35 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
   mwc/docs/wayland-rdp-upgrade.sh führt das durch (seit mwc fca2bcd).
 
-* mstsc über Bitvises "New Remote Desktop" schickt keine Layouts
-  (2026-11-11): im Fenster Scrollbalken, mit und ohne GFX; die Display-
-  Steuerung ist offen. Ein FreeRDP-Client (Remmina) schickt sie, und die
-  Ausgabe folgt. Vermutung: Bitvises .rdp-Datei (dynamic resolution /
-  smart sizing). Gegenprobe: Bitvise-C2S 127.0.0.1:13389 -> localhost:3389,
-  dann mstsc /v:127.0.0.1:13389 und das Fenster ziehen.
-  Abnahme: "monitor layout …" im Log, die Ausgabe folgt.
+* mstsc schickt keine Fenstergrößen (2026-11-11). Die Anfangsgröße beim
+  Verbinden geht ("output follows the client"), ein Größenwechsel
+  während der Sitzung nicht: im Fenster Scrollbalken, größer als die
+  Auflösung lässt es sich nicht ziehen, und im Log kommt kein "monitor
+  layout". Ausgeschlossen:
+  - Bitvises Knopf: mstsc direkt (Bitvise-C2S 13389 -> 3389) genauso.
+  - Default.rdp: gibt es nicht; eine eigene .rdp mit dynamic
+    resolution:i:1, smart sizing:i:0, screen mode id:i:1 genauso.
+  - GFX: mit WAYRDP_NO_GFX=1 genauso.
+  - Reihenfolge Display-Steuerung/GFX: beides probiert, genauso.
+  - Caps vor dem CREATE_RESPONSE: gehen seit fix/disp-caps-after-create
+    erst danach (wie gnome-remote-desktop), genauso.
+  Remmina und xfreerdp /dynamic-resolution schicken Layouts über denselben
+  Kanal, die Ausgabe folgt. mstsc entscheidet also anderswo, dass der
+  Server die Größe nicht ändern kann. Noch zu prüfen: was ein Windows-
+  Server bzw. gnome-remote-desktop sonst meldet (Server-Core-Version,
+  Monitor Layout PDU, MaxNumMonitors 16 und Faktoren 8192x8192 statt
+  1 und 8192x4320); ein Mitschnitt von mstsc gegen gnome-remote-desktop
+  würde es zeigen.
+  Abnahme: "monitor layout …" im Log, wenn das mstsc-Fenster gezogen wird.
+
+* Sperre nach drei Fehlversuchen und mstsc: mstsc verbraucht pro
+  Verbindung oft zwei davon, bevor man tippt (erst ein automatischer
+  Versuch mit gespeicherten oder Windows-Anmeldedaten, dann ein Abbruch
+  mitten in NLA, um den Dialog zu zeigen). Ausweg: Verbindungen, die vor
+  der Passwortprüfung abbrechen, nicht als Fehlversuch zählen; nur eine
+  wirklich abgelehnte Anmeldung (MIC falsch, Benutzer unbekannt) zählt.
+  Abnahme: mstsc mit falschen gespeicherten Daten verbraucht einen
+  Versuch, nicht zwei; test/mwc-rdp.sh und test/pam-rdp.sh bleiben grün.
 
 * Kleinigkeiten
   - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.

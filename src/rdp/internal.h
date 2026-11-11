@@ -118,6 +118,9 @@ struct rdp_peer {
 	struct aml_timer* disp_timer;
 	pthread_mutex_t disp_lock;
 	uint32_t disp_width, disp_height;
+	/* The caps go once the client created the channel. */
+	uint32_t disp_channel_id;
+	bool disp_caps_sent;
 
 	/* Graphics pipeline (gfx.c). */
 	RdpgfxServerContext* gfx;

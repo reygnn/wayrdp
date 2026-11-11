@@ -97,6 +97,42 @@ static void on_layout(struct aml_handler* handler)
 	aml_start(aml_get_default(), self->disp_timer);
 }
 
+static BOOL on_channel_id(DispServerContext* context, UINT32 channel_id)
+{
+	struct rdp_peer* self = context->custom;
+	self->disp_channel_id = channel_id;
+	return TRUE;
+}
+
+/*
+ * The client created the channel (or refused it). The caps go only now:
+ * mstsc drops what comes for a channel it hasn't created yet, and without
+ * the caps it scales the picture instead of sending layouts. FreeRDP's
+ * clients take data before the creation too. Main loop (drdynvc).
+ */
+static BOOL on_dvc_created(void* userdata, UINT32 channel_id, INT32 status)
+{
+	struct rdp_peer* self = userdata;
+	if (!self->disp || channel_id != self->disp_channel_id
+			|| self->disp_caps_sent)
+		return TRUE;
+
+	if (status < 0) {
+		wv_log(WV_LOG_INFO, "%s: the client refused display control (%d)",
+				self->client->hostname, status);
+		rdp_display_close(self);
+		return TRUE;
+	}
+	if (self->disp->DisplayControlCaps(self->disp) != CHANNEL_RC_OK) {
+		wv_log(WV_LOG_WARNING, "Display control setup failed");
+		rdp_display_close(self);
+		return TRUE;
+	}
+	self->disp_caps_sent = true;
+	wv_log(WV_LOG_DEBUG, "%s: display control open", self->client->hostname);
+	return TRUE;
+}
+
 void rdp_display_check(struct rdp_peer* self)
 {
 	if (self->disp_tried || !self->logged_on || !self->server->config.resize_output)
@@ -135,7 +171,10 @@ void rdp_display_check(struct rdp_peer* self)
 	d->MaxMonitorAreaFactorA = RDP_MAX_SIDE;
 	d->MaxMonitorAreaFactorB = RDP_MAX_AREA / RDP_MAX_SIDE;
 	d->DispMonitorLayout = on_monitor_layout;
+	d->ChannelIdAssigned = on_channel_id;
 
+	WTSVirtualChannelManagerSetDVCCreationCallback(ctx->vcm, on_dvc_created,
+			self);
 	if (d->Open(d) != CHANNEL_RC_OK) {
 		wv_log(WV_LOG_INFO, "%s: no display control", self->client->hostname);
 		disp_server_context_free(d);
@@ -143,17 +182,18 @@ void rdp_display_check(struct rdp_peer* self)
 		return;
 	}
 	self->disp = d;
-
-	if (d->DisplayControlCaps(d) != CHANNEL_RC_OK) {
-		wv_log(WV_LOG_WARNING, "Display control setup failed");
-		rdp_display_close(self);
-		return;
-	}
-	wv_log(WV_LOG_DEBUG, "%s: display control open", self->client->hostname);
+	/* The caps follow in on_dvc_created(). */
 }
 
 void rdp_display_close(struct rdp_peer* self)
 {
+	if (self->disp_tried && self->client && self->client->context) {
+		struct rdp_peer_context* ctx =
+			(struct rdp_peer_context*)self->client->context;
+		if (ctx->vcm && ctx->vcm != INVALID_HANDLE_VALUE)
+			WTSVirtualChannelManagerSetDVCCreationCallback(ctx->vcm,
+					NULL, NULL);
+	}
 	if (self->disp) {
 		/* Joins FreeRDP's thread: no callback after this. */
 		self->disp->Close(self->disp);
