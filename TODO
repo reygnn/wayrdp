@@ -29,26 +29,36 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   beim Client oder ohne Caps in 3 s. Offen:
   - Zwischenablage mit GFX: test/mwc-rdp.sh prüft sie, mit mstsc nicht
     eigens.
-  - Weitere Stufen, nur wenn der Tunnel in der Firma es verlangt. Messung
-    (Terminal scrollt, 1280x800, 30 fps): Progressive 6,8 MB/s, RemoteFX alt
-    6,9 MB/s, Planar 9,3 MB/s; bei Text bringt RemoteFX wenig.
-    - Quantisierung von RemoteFX gröber stellen (weniger Qualität, weniger
-      Bytes; FreeRDP nimmt die Standardwerte).
-    - AVC420 (H.264): braucht einen Encoder. Ubuntus FreeRDP 3.32 hat
-      keinen (WITH_GFX_H264 aus); ein eigenes FreeRDP mit OpenH264 liegt
-      zum Testen in ~/data/opt/freerdp-master. Für den Server also entweder
-      gegen ein eigenes FreeRDP bauen oder x264/libavcodec selbst
-      einbinden und den AVC420-Bitstream (Metablock, NAL-Units) selbst
-      bauen.
-    - SurfaceToSurface für Scrollen und den Bitmap-Cache (CacheToSurface)
-      nutzen: spart bei Text am meisten, braucht aber Wissen, was sich
-      verschoben hat.
+  - Weitere Stufen, nur wenn der Tunnel in der Firma es verlangt, in
+    dieser Reihenfolge. Messung (Terminal scrollt, 1280x800, 30 fps):
+    Progressive 6,8 MB/s, RemoteFX alt 6,9 MB/s, Planar 9,3 MB/s.
+    - Progressive mit Nachschärfen: geänderte Tiles erst mit gröberer
+      Quantisierung, und Bereiche, die sich ein paar hundert ms nicht mehr
+      geändert haben, noch einmal in voller Qualität (eine zweite
+      Quantisierungstabelle und eine Liste "nachzuschärfen" im Server).
+      Bewegung kostet dann weniger, ruhender Text bleibt scharf. FreeRDPs
+      Encoder kann nur den einfachen Modus (alles in einem Durchgang); die
+      echten Stufen des Protokolls (TILE_FIRST, TILE_UPGRADE) wären eigener
+      Codec-Code.
+    - SurfaceToSurface für Scrollen und den Bitmap-Cache (CacheToSurface):
+      spart bei Text am meisten, braucht aber Wissen, was sich verschoben
+      hat.
+    - AVC420 (H.264), zuletzt: viel weniger Bytes bei Bewegung, aber
+      unschärferer farbiger Text (4:2:0), ohne GPU etwa ein Kern bei
+      1920x1080/30 fps, und ein Encoder fehlt (Ubuntus FreeRDP 3.32 ohne
+      WITH_GFX_H264; zum Testen ~/data/opt/freerdp-master mit OpenH264).
+      Für den Server gegen ein eigenes FreeRDP bauen oder x264/libavcodec
+      einbinden und den AVC420-Bitstream selbst bauen.
 
 * Einsatz in der Firma (Entscheidung 2026-11-11): erst wenn wayrdp zuhause
   100 % stabil läuft (Test-VM, test/mwc-rdp.sh). Dann direkt auf 3389,
   xrdp und wayvnc vorher entfernen, keine Phase auf 3390 daneben. Danach
   prüfen: Bildrate und Gefühl über den echten Tunnel, Tastatur mit dem
   Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
+  Dabei die Laufzeit messen: höchstens zwei Frames sind unbestätigt
+  unterwegs (RDP_MAX_FRAMES_IN_FLIGHT), ab etwa 67 ms hin und zurück
+  sinkt die Bildrate damit unter 30 fps. Dann die Grenze anheben oder an
+  der Laufzeit ausrichten.
   Anleitung für den Server dort (mwc, xrdp, selbst gebautes wayvnc):
   docs/upgrade-to-wayrdp.md; vom X11-Stand aus mwc/docs/
   wayland-rdp-upgrade.sh (seit mwc fca2bcd, Größe korrigiert in 13e12ee).
@@ -66,12 +76,68 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   einer Ubuntu-VM probieren; klappt es dort, die Unterschiede im
   Verbindungsaufbau vergleichen.
 
+* Aus dem Code-Review vom 2026-11-11 (vier Agenten: Robustheit,
+  Speicher, sauberer Code, Hotpath). Erledigt: Use-after-free beim Beenden
+  (e11c9ac), Hauptschleife hing an einem Client, der nicht liest (0527872).
+  Nichts davon stört im Alltag mit mstsc und NLA.
+  - Hotpath:
+    - Planar: freerdp_bitmap_planar_context_reset() pro Tile alloziert und
+      kopiert jedes Mal ~72 kB (winpr_aligned_recalloc behält den Block bei
+      gleicher Größe nicht), ~1-2 ms von 8,5 ms pro Frame. Nur zurücksetzen,
+      wenn sich die Tile-Größe ändert. Betrifft nur Clients ohne GFX.
+    - GFX: FreeRDP zerlegt jeden Frame in DVC-Stücke von 1600 Bytes
+      (DVC_MAX_DATA_PDU_SIZE), je mit eigener Queue-Nachricht, eventfd und
+      send(); vermutlich ein guter Teil der Mehr-CPU gegenüber RemoteFX.
+      Erst mit strace -c messen; Hebel sind weniger Bytes oder TCP_CORK.
+    - RemoteFX alt: Gruppen von nur 24 Tiles (RFX_TILE_BOUND 24 kB), je
+      eine Barriere im Thread-Pool; nach Erfahrungswerten größer gruppieren.
+    - Progressive: 260 region16_union_rect pro ganzem Frame; ein Rechteck
+      pro zusammenhängendem Lauf in jeder Tile-Zeile.
+  - Robustheit (alle nur bei böswilligen oder kaputten Clients):
+    - Vier stumme TCP-Verbindungen sperren den Login bis zu 30 s
+      (MAX_PENDING): kürzere Frist vor TLS/NLA oder die älteste verdrängen.
+    - -a pam: PAM läuft im selben Worker wie der Encoder; falsche
+      Passwörter (pam_faildelay) lassen das Bild sekundenlang stehen.
+      Eigener Worker für PAM.
+    - Leseanfragen der Zwischenablage vom Client sind nicht begrenzt (je ein
+      Pipe und Timer): eine offene pro Client, weitere mit FAIL beantworten.
+    - Acks werden nicht geprüft: ein Ack über frame_id hinaus (oder ein
+      verspätetes nach einer Reaktivierung auf dem alten Weg) hält die
+      Ausgabe 250 ms an. Acks hinter (int32_t)(frame_id - ack) < 0
+      verwerfen.
+    - RefreshRect: TS_RECTANGLE16 ist inklusiv, server.c rechnet exklusiv
+      (letzte Zeile/Spalte fehlt), verdrehte Rechtecke prüfen.
+    - display.c: rdp_display_close() aus on_dvc_created läuft, während
+      FreeRDP die Kanaltabelle hält; nur wenn der Client den Kanal
+      ablehnt. Über ein aml_idle schließen.
+    - clipboard.c: schlägt cliprdr Open halb fehl, fehlt c->Close(c) vor
+      dem Freigeben.
+  - Aufräumen:
+    - PAM aus peer.c in ein eigenes Modul; die Prüfung des Benutzernamens
+      und "angemeldet" je als eine Hilfsfunktion.
+    - Flusskontrolle (frame_acks, ack_wait, ack_seen, frame_id, last_ack)
+      ist über peer.c, gfx.c und server.c verteilt: ein struct mit vier
+      Hilfsfunktionen.
+    - rdp_server_schedule() macht fünf Dinge; aufteilen. "Wunschgröße
+      löschen" und "alles neu zeichnen" je dreimal kopiert.
+    - Veraltete Kommentare: auth.h (failures zählt nur geprüfte
+      Passwörter), internal.h (main.c sieht auch auth.h und keymap.h),
+      gfx.c:214 und peer.c (Planar gibt es nicht nur in den Tests).
+    - Toter Code: rdp_server_stats.damage_area, rdp_server_get_stats(),
+      gfx_version, free_job_work(), disp_lock_init.
+    - Test-Schalter (WAYRDP_FORCE_PLANAR, WAYRDP_NO_GFX,
+      WAYRDP_TEST_IGNORE_GFX_CAPS, WAYRDP_LOGIN_TIMEOUT) einmal beim Start
+      lesen und an einer Stelle beschreiben; WAYRDP_FORCE_PLANAR wird heute
+      bei jedem Frame gelesen.
+    - Magische Zahlen (Zeigercache 32 dreifach, Puffergrößen),
+      gemischte Rückgabekonventionen (int/bool/BOOL).
+
 * Kleinigkeiten
   - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht
     ab): Testprozesse landen dort. distrobox stop wayrdp-dev räumt; dabei
     bleibt es (Entscheidung 2026-11-11, kein init=true).
-  - Version: 0.1.0 ist so gewollt (Entscheidung 2026-11-10). Tag/Release nur
-    auf Nachfrage.
+  - Version 0.5.3 (2026-11-11, include/version.h). Tag/Release nur auf
+    Nachfrage.
 
 * Offene Fragen aus dem Entwurf, unverändert offen
   - Kann mwc die virtuellen Eingabeprotokolle nur wayrdp anbieten statt allen
