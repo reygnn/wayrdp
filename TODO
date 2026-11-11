@@ -1,19 +1,14 @@
 TODO
 
-Stand 2026-11-10: M0 bis M5 aus docs/wayrdp-Entwurf.md sind fertig und auf
-main. Erster Test mit echtem mstsc (Windows-11-VM auf watermoon, über Bitvise):
-Anmeldung per NLA, Größe nach Fenster (disp), Zwischenablage-Kanal, Zeigerbilder
-und Synchronize gehen. Aber mstsc bietet ohne GFX kein RemoteFX an:
-
-    RemoteFX 0 (id 0, mode 0, RLGR 1), surface commands 0x12,
-    frame markers 1, multifrag 4276224        -> active, 1280x800, Planar
-
-(0x12 = SET_SURFACE_BITS | FRAME_MARKER, kein STREAM_SURFACE_BITS 0x40.)
-wayrdp läuft deshalb mit Planar-Bitmaps. Lokal reicht das ("ls -la /usr/bin"
-schnell), ein deckend gezogenes Fenster ruckelt leicht: 7,9 fps, 1863 kB/s
-(~15 Mbit/s), 7 ms Kodieren pro Frame, wayrdp 5,7 % eines Kerns, mwc unter 1 %.
-Nicht der Server bremst; vermutlich mstsc in der VM, die gleichzeitig mit
-Windows Update auf zwei Kernen lief.
+Stand 2026-11-11: M0 bis M5 aus docs/wayrdp-Entwurf.md und die GFX-Pipeline
+(RemoteFX Progressive) sind auf main. Mit mstsc (Windows-11-VM auf watermoon,
+über Bitvise): Anmeldung per NLA, GFX 10.6, gezogenes Fenster 29 fps bei
+890 kB/s (vorher Planar: 7,9 fps, 1863 kB/s), Text scharf, Wiederverbinden;
+Zwischenablage-Kanal, Zeigerbilder und Synchronize am Vortag ohne GFX. Die Größe übernimmt wayrdp beim
+Verbinden; während der Sitzung meldet mstsc keine (Einschränkung von mstsc,
+siehe unten und README). Remmina und xfreerdp /dynamic-resolution passen sie
+an, auch auf ruhigem Desktop (Fix vom 2026-11-11). Die Sperre zählt nur
+geprüfte Passwörter. Umstieg in der Firma: docs/upgrade-to-wayrdp.md.
 
 Testaufbau zuhause (nicht im Repo):
   ~/data/vm/wayrdp-test.sh       mwc headless + wayrdp in der Box wayrdp-dev,
@@ -21,41 +16,24 @@ Testaufbau zuhause (nicht im Repo):
                                  KBD=, AUTH=nla|pam, --rebuild; Logs und Config
                                  in ~/data/vm/wayrdp-test/
   VM win11pro (libvirt qemu:///system), Bitvise darin -> ssh 192.168.122.1,
-  dann "New Remote Desktop" auf 127.0.0.1.
+  dann "New Remote Desktop" auf 127.0.0.1; oder mstsc direkt über eine
+  Bitvise-C2S-Regel 127.0.0.1:13389 -> localhost:3389 (Benutzer "user").
+  Ohne VM: Remmina in der Box (distrobox.ini), Server 127.0.0.1:3389.
 Automatische Tests: README unter "Building and tests" (test/mwc-rdp.sh,
 test/pam-rdp.sh, meson test). mwc dafür aus einer Kopie bauen, nicht im
 mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 
 
-* Messung wiederholen, wenn die VM ruhig ist. Sobald Windows Update in der VM
-  durch ist (qemu im Leerlauf nicht mehr ~200 %), ein Fenster deckend im Kreis
-  ziehen und die fps-Zeilen (server.c, alle 10 s, -L debug) und die CPU von
-  wayrdp, mwc und qemu messen. Bleibt es bei ~8 fps, zählen, wie viele
-  Mausbewegungen mstsc schickt (on_mouse in src/rdp/input.c: einen Zähler in
-  die Statistikzeile von server.c) und wie viele Frames mwc liefert
-  (process_frame in main.c). Erst dann entscheiden, ob der Engpass mstsc, die
-  Eingabe oder die Aufnahme ist.
-  Abnahme: eine Zeile im README unter den Messwerten, mit Bewegungen/s und
-  Frames/s.
-
-* GFX-Pipeline: Stufe 1 steht (Branch feature/gfx-pipeline, 2026-11-11).
-  src/rdp/gfx.c: Kanal ohne eigenen Thread in aml, CapsConfirm mit der
-  höchsten Version 10.7 … 8.0 (AVC aus), je Aktivierung ResetGraphics und
-  eine neue Surface, Frames als RemoteFX Progressive mit FRAME_ACKNOWLEDGE
-  (auch SUSPEND). Rückfall auf den alten Weg ohne Pipeline beim Client oder
-  ohne Caps in 3 s. test/mwc-rdp.sh erwartet jetzt GFX; grün auch mit
-  WAYRDP_NO_GFX=1, WAYRDP_FORCE_PLANAR=1, /gfx:frame-ack:off (sdl master)
-  und unter valgrind (0 Fehler, nichts verloren).
-  - mstsc in der VM (2026-11-11): Pipeline 10.6, "active, 1280x800, GFX,
-    RemoteFX Progressive". Gezogenes Fenster 29 fps, 890 kB/s, 1,7 ms je
-    Frame (Planar am Vortag 7,9 fps, 1863 kB/s); flüssig, Text scharf.
-    Noch zu prüfen: Größe nach Fenster, Wiederverbinden, Zwischenablage
-    mit GFX.
-  - Nicht getestet: der Rückfall nach 3 s ohne Caps (kein Client an der
+* GFX-Pipeline, Stufe 1 auf main (2026-11-11): src/rdp/gfx.c, RemoteFX
+  Progressive, FRAME_ACKNOWLEDGE, Rückfall auf den alten Weg ohne Pipeline
+  beim Client oder ohne Caps in 3 s. Offen:
+  - Der Rückfall nach 3 s ohne Caps ist nicht getestet (kein Client an der
     Hand, der die Pipeline ankündigt und dann schweigt).
-  - Messung (Terminal scrollt, 1280x800, 30 fps): Progressive 6,8 MB/s,
-    RemoteFX alt 6,9 MB/s, Planar 9,3 MB/s. Bei Text bringt RemoteFX wenig.
-    Weitere Stufen, je nach mstsc-Messung:
+  - Zwischenablage mit GFX: test/mwc-rdp.sh prüft sie, mit mstsc nicht
+    eigens.
+  - Weitere Stufen, nur wenn der Tunnel in der Firma es verlangt. Messung
+    (Terminal scrollt, 1280x800, 30 fps): Progressive 6,8 MB/s, RemoteFX alt
+    6,9 MB/s, Planar 9,3 MB/s; bei Text bringt RemoteFX wenig.
     - Quantisierung von RemoteFX gröber stellen (weniger Qualität, weniger
       Bytes; FreeRDP nimmt die Standardwerte).
     - AVC420 (H.264): braucht einen Encoder. Ubuntus FreeRDP 3.32 hat
@@ -82,7 +60,9 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   xrdp und wayvnc vorher entfernen, keine Phase auf 3390 daneben. Danach
   prüfen: Bildrate und Gefühl über den echten Tunnel, Tastatur mit dem
   Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
-  mwc/docs/wayland-rdp-upgrade.sh führt das durch (seit mwc fca2bcd).
+  Anleitung für den Server dort (mwc, xrdp, selbst gebautes wayvnc):
+  docs/upgrade-to-wayrdp.md; vom X11-Stand aus mwc/docs/
+  wayland-rdp-upgrade.sh (seit mwc fca2bcd, Größe korrigiert in 13e12ee).
 
 * mstsc ändert die Größe während der Sitzung nicht (2026-11-11), Stand:
   Einschränkung von mstsc, als solche im README. Die Anfangsgröße geht.
