@@ -14,11 +14,13 @@ design, milestones and open questions are in
 ## Status
 
 All milestones of the design are implemented and tested end to end against
-FreeRDP's clients (xfreerdp3, sdl-freerdp3) in a headless mwc. **Not yet
-tested with mstsc**, which is gate 1 of the design: does Windows' Remote
-Desktop take RemoteFX over surface bits smoothly? It is tested at home until
-it runs fully stable; only then does it go on the server, straight on 3389 in
-place of xrdp and wayvnc.
+FreeRDP's clients (xfreerdp3, sdl-freerdp3) in a headless mwc. Tested by
+hand with mstsc (Windows 11 VM through Bitvise) and Remmina: mstsc takes
+RemoteFX only over the graphics pipeline, which wayrdp now speaks (the
+numbers are under "What it does"). Open: mstsc started from Bitvise's Remote Desktop button sends no
+window sizes (see `TODO`). It is tested at home until it runs fully stable;
+only then does it go on the server, straight on 3389 in place of xrdp and
+wayvnc.
 
 | Milestone | Content | State |
 |---|---|---|
@@ -256,6 +258,13 @@ and then hangs once pointer images come, and its clipboard turns text into
 graphics pipeline), `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the
 fallback; the FreeRDP clients always offer the pipeline and RemoteFX),
 `WAYRDP_WRAP="valgrind …"`.
+
+By hand at home, without VM or tunnel: Remmina in the box (it is in
+`distrobox.ini`), with a test server from mwc headless and wayrdp on
+127.0.0.1:3389. In Remmina a new RDP profile: server `127.0.0.1:3389`, the
+user wayrdp runs as and its RDP password. It takes the graphics pipeline
+(10.7, RemoteFX Progressive) and, with dynamic resolution on (toolbar),
+the output follows its window.
 
 `test/pam-rdp.sh` needs `/etc/pam.d/wayrdp` and the password of the user
 running it: the right password gets the picture, a wrong and an empty one
