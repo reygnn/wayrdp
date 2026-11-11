@@ -429,6 +429,10 @@ void rdp_server_schedule(struct rdp_server* self)
 	if (!pixman_region_not_empty(&self->pending))
 		return;
 
+	/* The last frames haven't gone out yet: no new ones on top. */
+	if (rdp_peer_write_blocked(peer))
+		return;
+
 	if (peer->ack_wait && rdp_peer_frames_in_flight(peer)
 			>= RDP_MAX_FRAMES_IN_FLIGHT) {
 		start_ack_timer(self);

@@ -14,9 +14,14 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
 #include <aml.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/peer.h>
@@ -63,6 +68,11 @@ static void stop_handlers(struct rdp_peer* self)
 		aml_stop(aml_get_default(), self->vcm_handler);
 		aml_unref(self->vcm_handler);
 		self->vcm_handler = NULL;
+	}
+	if (self->write_handler) {
+		aml_stop(aml_get_default(), self->write_handler);
+		aml_unref(self->write_handler);
+		self->write_handler = NULL;
 	}
 }
 
@@ -131,6 +141,9 @@ void rdp_peer_destroy(struct rdp_peer* self)
 		wv_log(WV_LOG_INFO, "Connection from %s closed",
 				self->client->hostname);
 
+	if (self->sock >= 0)
+		close(self->sock);
+
 	freerdp_peer* client = self->client;
 	client->Disconnect(client);
 	freerdp_peer_context_free(client);
@@ -164,6 +177,73 @@ static void on_peer_event(struct aml_handler* handler)
 	}
 	rdp_display_check(self);
 	rdp_gfx_check(self);
+	/* Channel data just went into FreeRDP's output. */
+	rdp_peer_write_blocked(self);
+}
+
+static void on_writable(struct aml_handler* handler)
+{
+	struct rdp_peer* self = aml_get_userdata(handler);
+	if (self->closing)
+		return;
+
+	int rc = self->client->DrainOutputBuffer(self->client);
+	if (rc < 0) {
+		wv_log(WV_LOG_INFO, "%s: writing to the client failed",
+				self->client->hostname);
+		rdp_peer_close(self);
+		return;
+	}
+	if (rc > 0)
+		return; /* still more than the socket takes */
+
+	aml_stop(aml_get_default(), self->write_handler);
+	if (self->server->active == self)
+		rdp_server_schedule(self->server);
+}
+
+bool rdp_peer_write_blocked(struct rdp_peer* self)
+{
+	if (self->closing || !self->client->IsWriteBlocked(self->client))
+		return false;
+	if (self->sock < 0)
+		return true;
+
+	if (!self->write_handler) {
+		self->write_handler = aml_handler_new(self->sock, on_writable,
+				self, NULL);
+		if (!self->write_handler)
+			return true;
+		aml_set_event_mask(self->write_handler, AML_EVENT_WRITE);
+	}
+	if (!aml_is_started(aml_get_default(), self->write_handler)) {
+		wv_log(WV_LOG_DEBUG, "%s: waiting for the client to take output",
+				self->client->hostname);
+		aml_start(aml_get_default(), self->write_handler);
+	}
+	return true;
+}
+
+/*
+ * A client whose network is gone without a word (no FIN): data stays
+ * unacknowledged, and after TCP_USER_TIMEOUT the kernel ends the
+ * connection; an idle one goes after the keepalive probes. Either way the
+ * session is free again for the next login.
+ */
+static void set_tcp_timeouts(int fd)
+{
+	int on = 1, idle = 20, interval = 5, count = 3;
+	unsigned int user_timeout_ms = 20000;
+	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &on, sizeof(on)) < 0
+			|| setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle,
+				sizeof(idle)) < 0
+			|| setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
+				sizeof(interval)) < 0
+			|| setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count,
+				sizeof(count)) < 0
+			|| setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT,
+				&user_timeout_ms, sizeof(user_timeout_ms)) < 0)
+		wv_log(WV_LOG_DEBUG, "Can't set the TCP timeouts: %m");
 }
 
 /* After NLA. NTLM checked the password against the SAM file, which holds
@@ -587,6 +667,10 @@ static bool apply_settings(struct rdp_peer* self)
 		{ FreeRDP_DesktopResize, true },
 		{ FreeRDP_RedirectClipboard, true },
 		{ FreeRDP_SuppressOutput, true },
+		/* Don't wait in the main loop for a client that doesn't read:
+		 * what the socket doesn't take stays in FreeRDP's buffer, and
+		 * no new frame is encoded until it has gone out. */
+		{ FreeRDP_WaitForOutputBufferFlush, false },
 		{ FreeRDP_RefreshRect, true },
 		{ FreeRDP_UnicodeInput, true },
 		{ FreeRDP_HasHorizontalWheel, true },
@@ -647,6 +731,13 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	self->server = server;
 	self->client = client;
 	self->serial = server->next_serial++;
+	self->sock = -1;
+
+	/* FreeRDP takes the socket over in freerdp_peer_context_new(). */
+	if (client->sockfd >= 0) {
+		set_tcp_timeouts(client->sockfd);
+		self->sock = fcntl(client->sockfd, F_DUPFD_CLOEXEC, 0);
+	}
 
 	client->ContextSize = sizeof(struct rdp_peer_context);
 	client->ContextNew = context_new;
@@ -713,6 +804,8 @@ failure:
 	stop_handlers(self);
 	/* The listener frees the peer itself when we fail. */
 	freerdp_peer_context_free(client);
+	if (self->sock >= 0)
+		close(self->sock);
 	free(self);
 	return NULL;
 }
@@ -883,4 +976,6 @@ void rdp_peer_send(struct rdp_peer* self, const struct rdp_encode_job* job)
 		self->picture_sent = true;
 		rdp_cursor_send(self);
 	}
+	/* What the socket didn't take goes out as it can. */
+	rdp_peer_write_blocked(self);
 }

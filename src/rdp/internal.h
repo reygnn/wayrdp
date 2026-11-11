@@ -62,6 +62,11 @@ struct rdp_peer {
 	struct aml_handler* handlers[RDP_MAX_PEER_HANDLES];
 	int n_handlers;
 	struct aml_handler* vcm_handler;
+	/* The client's socket (a duplicate: FreeRDP owns the original). While
+	 * FreeRDP holds output the socket didn't take, no new frame is
+	 * encoded, and write_handler drains it as the socket takes more. */
+	int sock;
+	struct aml_handler* write_handler;
 	struct aml_idle* close_idle;
 
 	bool logged_on;
@@ -270,6 +275,9 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client);
 void rdp_peer_close(struct rdp_peer* self);
 void rdp_peer_destroy(struct rdp_peer* self);
 bool rdp_peer_wants_frames(const struct rdp_peer* self);
+/* Output waits in FreeRDP's buffer for the socket; it gets drained as the
+ * socket takes it, and the server is scheduled again then. */
+bool rdp_peer_write_blocked(struct rdp_peer* self);
 uint32_t rdp_peer_frames_in_flight(const struct rdp_peer* self);
 void rdp_peer_send(struct rdp_peer* self, const struct rdp_encode_job* job);
 bool rdp_peer_resize(struct rdp_peer* self, uint32_t width, uint32_t height);

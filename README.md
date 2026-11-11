@@ -49,7 +49,10 @@ wayvnc.
   clients without the pipeline, RemoteFX as surface bits, and Planar bitmaps
   for those without RemoteFX either. 64×64 tiles, only the damaged ones,
   encoded in a worker thread; at most two frames unacknowledged (clients
-  that never acknowledge, or suspend it, are served without waiting). No
+  that never acknowledge, or suspend it, are served without waiting). A
+  client that stops reading gets no new frames while its socket is full,
+  and wayrdp never waits for it in its main loop; a connection whose
+  network is gone ends after 20 s (TCP_USER_TIMEOUT, keepalive). No
   H.264 yet. A client that announces the pipeline but sends no capabilities
   within 3 s gets the old way.
 - **Keyboard:** the client sends physical scancodes; wayrdp turns them into
@@ -233,6 +236,7 @@ MWC=/path/to/mwc test/mwc-probe.sh      # capture from mwc, no client
 MWC=/path/to/mwc test/mwc-rdp.sh        # end to end, -a nla
 MWC=/path/to/mwc PAM_PASSWORD=… test/pam-rdp.sh   # end to end, -a pam
 MWC=/path/to/mwc test/clipboard-shutdown.sh   # exit with a clipboard read waiting (valgrind)
+MWC=/path/to/mwc test/stuck-client.sh         # a client that stops reading
 ```
 
 The unit tests pin the scancode table, Pause, the wheel, UTF-8/UTF-16 with

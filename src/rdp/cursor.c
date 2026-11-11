@@ -236,4 +236,5 @@ void rdp_cursor_send(struct rdp_peer* self)
 		self->cursor_cache[slot].used = ++self->cursor_tick;
 	self->cursor_hash_shown = server->cursor_hash;
 	self->cursor_hidden_shown = false;
+	rdp_peer_write_blocked(self);
 }
