@@ -45,3 +45,12 @@ test('convert', executable('convert',
 	include_directories: [inc, include_directories('../src')],
 	dependencies: [ ],
 ))
+test('planar', executable('planar',
+	[
+		'planar-test.c',
+		'../src/rdp/encoder.c',
+	],
+	# '..' also brings the build root, where config.h is.
+	include_directories: [inc, include_directories('..', '../src')],
+	dependencies: [ freerdp, winpr, pixman ],
+))

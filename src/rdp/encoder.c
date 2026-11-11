@@ -207,11 +207,12 @@ static bool encode_planar(struct rdp_encoder* self, struct rdp_encode_job* job)
 		b->width = tiles[i].width;
 		b->height = tiles[i].height;
 
-		if (!freerdp_bitmap_planar_context_reset(self->planar,
-					b->width, b->height)) {
-			ok = false;
-			break;
-		}
+		/* No reset per tile: the context was made for 64x64, the
+		 * compressor takes the tile's size from its arguments, and a
+		 * reset reallocates its four buffers each time (WinPR keeps a
+		 * block only if it is larger than asked for), ~72 kB copied
+		 * per tile. test/planar-test.c pins that the output is the
+		 * same. */
 		const uint8_t* src = pixels + (size_t)b->y * job->stride
 			+ (size_t)b->x * 4;
 		uint32_t size = 0;

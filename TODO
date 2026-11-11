@@ -81,10 +81,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   (e11c9ac), Hauptschleife hing an einem Client, der nicht liest (0527872).
   Nichts davon stört im Alltag mit mstsc und NLA.
   - Hotpath:
-    - Planar: freerdp_bitmap_planar_context_reset() pro Tile alloziert und
-      kopiert jedes Mal ~72 kB (winpr_aligned_recalloc behält den Block bei
-      gleicher Größe nicht), ~1-2 ms von 8,5 ms pro Frame. Nur zurücksetzen,
-      wenn sich die Tile-Größe ändert. Betrifft nur Clients ohne GFX.
     - GFX: FreeRDP zerlegt jeden Frame in DVC-Stücke von 1600 Bytes
       (DVC_MAX_DATA_PDU_SIZE), je mit eigener Queue-Nachricht, eventfd und
       send(); vermutlich ein guter Teil der Mehr-CPU gegenüber RemoteFX.
