@@ -93,6 +93,12 @@ encoding per frame, wayrdp 68 % of a core; RemoteFX as surface bits
 case for RemoteFX; mstsc took Planar before, since it offers RemoteFX only
 over the pipeline.
 
+mstsc (Windows 11 VM, through Bitvise, 1280×800), a window dragged around
+without pause: with the graphics pipeline (10.6, RemoteFX Progressive)
+29 fps, 890 kB/s, 1.7 ms encoding per frame, smooth, text sharp; before,
+with Planar, 7.9 fps, 1863 kB/s, 7 ms (2026-11-10, while Windows Update ran
+in the VM, so part of the frame rate may be that).
+
 ## Setting it up on the server
 
 This follows mwc's `docs/WAYLAND-RDP.md`: mwc runs headless as a user

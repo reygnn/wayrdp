@@ -46,10 +46,11 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   ohne Caps in 3 s. test/mwc-rdp.sh erwartet jetzt GFX; grün auch mit
   WAYRDP_NO_GFX=1, WAYRDP_FORCE_PLANAR=1, /gfx:frame-ack:off (sdl master)
   und unter valgrind (0 Fehler, nichts verloren).
-  - Offen: mstsc in der VM. Abnahme: das Log meldet "active, …, GFX,
-    RemoteFX Progressive"; Bild, Größe nach Fenster, Wiederverbinden gehen;
-    die fps-Zeile beim deckend gezogenen Fenster mit Planar vergleichen
-    (gestern 1863 kB/s bei 7,9 fps) und ins README.
+  - mstsc in der VM (2026-11-11): Pipeline 10.6, "active, 1280x800, GFX,
+    RemoteFX Progressive". Gezogenes Fenster 29 fps, 890 kB/s, 1,7 ms je
+    Frame (Planar am Vortag 7,9 fps, 1863 kB/s); flüssig, Text scharf.
+    Noch zu prüfen: Größe nach Fenster, Wiederverbinden, Zwischenablage
+    mit GFX.
   - Nicht getestet: der Rückfall nach 3 s ohne Caps (kein Client an der
     Hand, der die Pipeline ankündigt und dann schweigt).
   - Messung (Terminal scrollt, 1280x800, 30 fps): Progressive 6,8 MB/s,
