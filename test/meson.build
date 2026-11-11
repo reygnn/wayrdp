@@ -54,3 +54,11 @@ test('planar', executable('planar',
 	include_directories: [inc, include_directories('..', '../src')],
 	dependencies: [ freerdp, winpr, pixman ],
 ))
+test('flow', executable('flow',
+	[
+		'flow-test.c',
+		'../src/rdp/flow.c',
+	],
+	include_directories: [inc, include_directories('../src')],
+	dependencies: [ ],
+))

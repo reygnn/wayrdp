@@ -49,6 +49,7 @@
 #include "rdp/server.h"
 #include "rdp/auth.h"
 #include "rdp/keymap.h"
+#include "rdp/flow.h"
 
 struct aml_handler;
 struct aml_idle;
@@ -57,8 +58,6 @@ struct aml_work;
 struct wv_buffer;
 
 #define RDP_MAX_PEER_HANDLES 8
-/* Frames sent but not acknowledged before the capture waits. */
-#define RDP_MAX_FRAMES_IN_FLIGHT 2
 
 struct rdp_peer {
 	LIST_ENTRY(rdp_peer) link;
@@ -93,16 +92,10 @@ struct rdp_peer {
 	bool suppressed;
 	bool closing;
 
-	/* Flow control: frames carry ids the client acknowledges (frame
-	 * markers of the old way, or the graphics pipeline's own). Some
-	 * clients never acknowledge; until one ack has come, a timeout
-	 * switches the waiting off. */
-	bool frame_acks;
+	/* Flow control (flow.h). */
+	struct rdp_flow flow;
+	/* Surface bits go out with frame markers (the old way's acks). */
 	bool frame_markers;
-	bool ack_seen;
-	bool ack_wait;
-	uint32_t frame_id;
-	uint32_t last_ack;
 
 	uint32_t frames_sent;
 	uint64_t bytes_sent;
@@ -303,7 +296,6 @@ bool rdp_peer_wants_frames(const struct rdp_peer* self);
 /* Output waits in FreeRDP's buffer for the socket; it gets drained as the
  * socket takes it, and the server is scheduled again then. */
 bool rdp_peer_write_blocked(struct rdp_peer* self);
-uint32_t rdp_peer_frames_in_flight(const struct rdp_peer* self);
 void rdp_peer_send(struct rdp_peer* self, const struct rdp_encode_job* job);
 bool rdp_peer_resize(struct rdp_peer* self, uint32_t width, uint32_t height);
 bool rdp_peer_size_matches(const struct rdp_peer* self, uint32_t width,

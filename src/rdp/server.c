@@ -357,13 +357,8 @@ static void on_ack_timeout(struct aml_timer* timer)
 	if (!peer)
 		return;
 
-	if (!peer->ack_seen) {
+	if (rdp_flow_timeout(&peer->flow) == RDP_FLOW_NEVER_ACKED)
 		wv_log(WV_LOG_INFO, "The client doesn't acknowledge frames; sending without waiting");
-		peer->ack_wait = false;
-	} else {
-		/* Lost or skipped (mstsc skips them while inactive). */
-		peer->last_ack = peer->frame_id;
-	}
 	rdp_server_schedule(self);
 }
 
@@ -452,8 +447,7 @@ void rdp_server_schedule(struct rdp_server* self)
 	if (rdp_peer_write_blocked(peer))
 		return;
 
-	if (peer->ack_wait && rdp_peer_frames_in_flight(peer)
-			>= RDP_MAX_FRAMES_IN_FLIGHT) {
+	if (rdp_flow_must_wait(&peer->flow)) {
 		start_ack_timer(self);
 		return;
 	}

@@ -107,6 +107,7 @@ sources = [
 	'src/rdp/display.c',
 	'src/rdp/cursor.c',
 	'src/rdp/gfx.c',
+	'src/rdp/flow.c',
 ]
 
 dependencies = [

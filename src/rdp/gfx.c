@@ -158,14 +158,11 @@ static UINT on_frame_ack(RdpgfxServerContext* context,
 		const RDPGFX_FRAME_ACKNOWLEDGE_PDU* pdu)
 {
 	struct rdp_peer* self = context->custom;
-	if (pdu->queueDepth == SUSPEND_FRAME_ACKNOWLEDGEMENT) {
-		if (self->ack_wait)
-			wv_log(WV_LOG_DEBUG, "%s: frame acknowledgements suspended",
-					self->client->hostname);
-		self->ack_wait = false;
-	}
-	self->last_ack = pdu->frameId;
-	self->ack_seen = true;
+	if (pdu->queueDepth == SUSPEND_FRAME_ACKNOWLEDGEMENT
+			&& rdp_flow_suspend(&self->flow))
+		wv_log(WV_LOG_DEBUG, "%s: frame acknowledgements suspended",
+				self->client->hostname);
+	rdp_flow_ack(&self->flow, pdu->frameId);
 	if (self->server->active == self)
 		rdp_server_schedule(self->server);
 	return CHANNEL_RC_OK;
@@ -397,7 +394,7 @@ bool rdp_gfx_send(struct rdp_peer* self, const struct rdp_encode_job* job)
 		.data = Stream_Buffer(s),
 	};
 	RDPGFX_START_FRAME_PDU start = {
-		.frameId = ++self->frame_id,
+		.frameId = rdp_flow_next_id(&self->flow),
 		.timestamp = timestamp(),
 	};
 	RDPGFX_END_FRAME_PDU end = { .frameId = start.frameId };

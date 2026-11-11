@@ -502,21 +502,16 @@ static bool start_output(struct rdp_peer* self)
 			FreeRDP_DesktopHeight);
 
 	enum rdp_codec codec = rdp_peer_codec(self);
-	if (codec == RDP_CODEC_GFX_PROGRESSIVE && self->frame_acks
+	if (codec == RDP_CODEC_GFX_PROGRESSIVE && self->flow.acks
 			&& !self->frame_markers) {
-		/* Still the pipeline: its frame ids go on, and acks for the
-		 * old surface may still come. */
-		self->last_ack = self->frame_id;
+		/* Still the pipeline, on a new surface. */
+		rdp_flow_continue(&self->flow);
 	} else {
 		self->frame_markers = codec == RDP_CODEC_REMOTEFX
 			&& freerdp_settings_get_bool(settings,
 					FreeRDP_SurfaceFrameMarkerEnabled);
-		self->frame_acks = self->frame_markers
-			|| codec == RDP_CODEC_GFX_PROGRESSIVE;
-		self->ack_wait = self->frame_acks;
-		self->ack_seen = false;
-		self->frame_id = 0;
-		self->last_ack = 0;
+		rdp_flow_reset(&self->flow, self->frame_markers
+				|| codec == RDP_CODEC_GFX_PROGRESSIVE);
 	}
 
 	if (codec == RDP_CODEC_GFX_PROGRESSIVE
@@ -621,8 +616,7 @@ static BOOL on_suppress_output(rdpContext* context, BYTE allow,
 static BOOL on_frame_ack(rdpContext* context, UINT32 frame_id)
 {
 	struct rdp_peer* self = peer_from_context(context);
-	self->last_ack = frame_id;
-	self->ack_seen = true;
+	rdp_flow_ack(&self->flow, frame_id);
 	if (self->server->active == self)
 		rdp_server_schedule(self->server);
 	return TRUE;
@@ -817,13 +811,6 @@ bool rdp_peer_wants_frames(const struct rdp_peer* self)
 		&& !rdp_gfx_pending(self);
 }
 
-uint32_t rdp_peer_frames_in_flight(const struct rdp_peer* self)
-{
-	if (!self->frame_acks)
-		return 0;
-	return self->frame_id - self->last_ack;
-}
-
 bool rdp_peer_size_matches(const struct rdp_peer* self, uint32_t width,
 		uint32_t height)
 {
@@ -878,7 +865,8 @@ static void send_remotefx(struct rdp_peer* self, const struct rdp_encode_job* jo
 	cmd.bmp.height = job->height;
 	cmd.skipCompression = TRUE;
 
-	uint32_t frame_id = self->frame_markers ? ++self->frame_id : 0;
+	uint32_t frame_id = self->frame_markers
+		? rdp_flow_next_id(&self->flow) : 0;
 
 	for (size_t i = 0; i < job->n_messages; ++i) {
 		wStream* s = job->messages[i];
