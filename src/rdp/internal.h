@@ -15,11 +15,18 @@
  */
 
 /*
- * What the files in src/rdp/ share. main.c only sees rdp/server.h.
+ * What the files in src/rdp/ share. main.c sees rdp/server.h, and
+ * rdp/auth.h for the command line (--set-password, the config directory,
+ * whether PAM is there).
  *
- * Threads: everything runs on aml's main loop except the encoding, which runs
- * as aml_work in a worker. The worker touches only the encoder's codec
- * contexts and the job; it never calls into the peer.
+ * Threads: everything runs on aml's main loop except
+ * - the encoding and the PAM checks, as aml_work in a worker: an encode job
+ *   touches only the encoder's codec contexts and the job, a PAM job only
+ *   its own copy of the credentials; neither calls into the peer, they find
+ *   it again by its serial when they are done;
+ * - FreeRDP's display control server, which reads its channel in a thread
+ *   of its own and hands layouts over through an eventfd (display.c).
+ * The graphics pipeline's channel runs on the main loop (gfx.c).
  */
 
 #pragma once

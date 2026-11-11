@@ -27,7 +27,9 @@
 #include <stddef.h>
 
 struct rdp_auth {
-	/* Consecutive connections that ended before a successful logon. */
+	/* Consecutive failed logins: a password that was checked and refused
+	 * (see password_checked in internal.h), not a connection that went
+	 * before one was checked. */
 	int failures;
 	uint64_t locked_until_us;
 };
