@@ -46,15 +46,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
       nutzen: spart bei Text am meisten, braucht aber Wissen, was sich
       verschoben hat.
 
-* Irreführende Warnung "The output didn't become WxH; staying at …". Kommt,
-  wenn ein Client die Ausgabe auf seine Größe stellen lässt und dann gleich
-  geht (z. B. xfreerdp3 +auth-only): ohne Client läuft keine Aufnahme, also
-  kommen keine Frames der neuen Größe, und want_timer in server.c läuft ab.
-  Ausweg: in rdp_server_peer_gone() für den aktiven Peer want_width/height
-  löschen und want_timer anhalten.
-  Abnahme: die Warnung erscheint in test/mwc-rdp.sh nicht mehr nach den
-  +auth-only-Verbindungen.
-
 * Einsatz in der Firma (Entscheidung 2026-11-11): erst wenn wayrdp zuhause
   100 % stabil läuft (Test-VM, test/mwc-rdp.sh). Dann direkt auf 3389,
   xrdp und wayvnc vorher entfernen, keine Phase auf 3390 daneben. Danach

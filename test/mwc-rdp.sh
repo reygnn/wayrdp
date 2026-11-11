@@ -15,7 +15,8 @@
 #  - mwc "D" runs xfreerdp3 /dynamic-resolution asking for 901x700: the
 #    output becomes 900x700 (even width), and when D's window is resized to
 #    1100x800 the output follows (display control); again on a still
-#    desktop (the clock stopped), to 1200x900.
+#    desktop (the clock stopped), to 1200x900; mwc "E" asks for 1000x740
+#    and goes at once: no warning about that size.
 #
 #   MWC=/path/to/mwc test/mwc-rdp.sh [build/wayrdp]
 #
@@ -467,6 +468,25 @@ if [ "$OUTPUT_MANAGEMENT" = 1 ]; then
 	grep -q "active, 1200x900" "$dir/wayrdp.log" \
 		|| fail "on a still desktop the output didn't follow D's window to 1200x900"
 	echo "ok: on a still desktop too, 1200x900"
+
+	# A client that asks for a size and goes before a frame of it came:
+	# no one waits for the size any more, so no warning that the output
+	# didn't become it.
+	start_mwc e 1400x1000 '#000000' \
+		"$CLIENT /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:1000x740 /log-level:OFF >$dir/client-e.log 2>&1"
+	for ((i = 0; i < 500; i++)); do
+		grep -q "Asking for 1000x740" "$dir/wayrdp.log" && break
+		sleep 0.01
+	done
+	grep -q "Asking for 1000x740" "$dir/wayrdp.log" || fail "E never asked for 1000x740"
+	for p in $(pgrep -f "size:1000x740"); do
+		grep -qz "^WAYRDP_TEST_DIR=$dir\$" "/proc/$p/environ" 2>/dev/null \
+			&& kill -9 "$p"
+	done
+	sleep 2.5
+	! grep -q "didn't become 1000x740" "$dir/wayrdp.log" \
+		|| fail "a warning about a size no one waits for"
+	echo "ok: a client that goes at once leaves no warning"
 fi
 
 # Another login takes over, as when mstsc reconnects.

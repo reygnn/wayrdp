@@ -250,6 +250,12 @@ void rdp_server_peer_gone(struct rdp_server* self, struct rdp_peer* peer)
 		self->active = NULL;
 		/* No one looks; the next client starts from a fresh capture. */
 		drop_current(self);
+		/* No one waits for a size asked for either. Without a capture no
+		 * frame of it would come, and the timeout would warn that the
+		 * output didn't become it. */
+		self->want_width = self->want_height = 0;
+		if (self->want_timer)
+			aml_stop(aml_get_default(), self->want_timer);
 		notify_wants_frames(self);
 	}
 }
