@@ -87,15 +87,8 @@ of one core at 30 fps, 2.2 MB/s, 8 ms encoding per frame.
 This follows mwc's `docs/WAYLAND-RDP.md`: mwc runs headless as a user
 service, reached through a Bitvise SSH tunnel. wayrdp takes RDP's port 3389
 in place of xrdp and wayvnc; there is no phase next to them, so it goes on the
-server only once it runs stable.
-
-### 0. xrdp and wayvnc out
-
-```sh
-systemctl --user disable --now wayvnc
-sudo systemctl disable --now xrdp xrdp-sesman
-sudo apt purge xrdp wayvnc
-```
+server only once it runs stable. mwc's `docs/wayland-rdp-upgrade.sh` does
+these steps.
 
 ### 1. Build and install
 
@@ -115,6 +108,17 @@ sudo ninja -C build install      # /usr/local/bin/wayrdp, /etc/pam.d/wayrdp
 `--sysconfdir=/etc` puts the PAM service where PAM looks; meson would
 otherwise use `/usr/local/etc`. aml 1.0 is not packaged; meson fetches it as a
 subproject (`subprojects/aml.wrap`).
+
+### 1a. xrdp and wayvnc out
+
+Only once wayrdp has built, so a failed build leaves the old way in place.
+Nothing else may listen on 3389 afterwards (`ss -ltn | grep 3389`).
+
+```sh
+systemctl --user disable --now wayvnc
+sudo systemctl disable --now xrdp xrdp-sesman
+sudo apt purge xrdp wayvnc
+```
 
 ### 2. mwc
 

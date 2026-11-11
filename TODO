@@ -83,8 +83,7 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   xrdp und wayvnc vorher entfernen, keine Phase auf 3390 daneben. Danach
   prüfen: Bildrate und Gefühl über den echten Tunnel, Tastatur mit dem
   Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
-  mwc/docs/wayland-rdp-upgrade.sh (mwc-Repo) geht noch vom Weg über 3390
-  aus und muss dort angepasst werden.
+  mwc/docs/wayland-rdp-upgrade.sh führt das durch (seit mwc fca2bcd).
 
 * Kleinigkeiten
   - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.
