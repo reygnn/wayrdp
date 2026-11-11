@@ -102,8 +102,11 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 * Bekannte Eigenheiten der Test-Clients (für test/mwc-rdp.sh, nicht wayrdp)
   - wlfreerdp3: deprecated; hängt ab und zu, sobald Zeigerbilder kommen;
     seine Zwischenablage macht aus Text \u-Escapes; stürzt beim Trennen ab.
-  - sdl-freerdp3 (Standard für die Eingabe): verwirft das erste Rad-Ereignis,
-    sendet für eine einzelne Raste nichts.
+  - sdl-freerdp3 (Standard für die Eingabe): SDL3 nimmt in mwc X11
+    (Xwayland) statt Wayland, vermutlich weil mwc kein wp_fifo_v1 anbietet;
+    über Xwayland ging das erste Rad-Ereignis verloren. Der Test setzt
+    deshalb SDL_VIDEO_DRIVER=wayland, dann kommt jede Raste an (geprüft
+    2026-11-11 mit 3.32 und FreeRDP master 3.33.1).
   - xfreerdp3 unter Xwayland in mwc: gibt den Zeiger einmal weiter, danach
     nicht mehr; bietet RemoteFX auch mit -rfx an (deshalb
     WAYRDP_FORCE_PLANAR=1 für den Planar-Test); behält bei DesktopResize

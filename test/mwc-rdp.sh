@@ -4,7 +4,8 @@
 #    wayrdp serving it on localhost
 #  - xfreerdp3 +auth-only with the right and a wrong password (NLA)
 #  - mwc "B" on a second headless output, an RDP client in it
-#    (sdl-freerdp3, or CLIENT=xfreerdp3 through Xwayland, or wlfreerdp3),
+#    (sdl-freerdp3 forced onto Wayland, or CLIENT=xfreerdp3 through
+#    Xwayland, or wlfreerdp3),
 #    connected to wayrdp; a screenshot of B must show A's magenta desktop.
 #  - test/vinput moves, clicks and types in B, on the client window; A's
 #    pointer, focus and a terminal running cat must show it, German layout
@@ -146,8 +147,11 @@ if xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:wrong /cert:ignore \
 fi
 echo "ok: NLA with a wrong password refused"
 
+# Left alone, SDL3 takes X11 (Xwayland) in mwc, most likely because mwc
+# offers no wp_fifo_v1; through Xwayland the first wheel event gets lost.
+# Other clients ignore the variable.
 start_mwc b 1400x1000 '#000000' \
-	"$CLIENT /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:$CLIENT_SIZE $CLIENT_OPTS /log-level:WARN >$dir/client.log 2>&1"
+	"SDL_VIDEO_DRIVER=wayland $CLIENT /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:$CLIENT_SIZE $CLIENT_OPTS /log-level:WARN >$dir/client.log 2>&1"
 mwc_b=${pids[-1]}
 
 for ((i = 0; i < 150; i++)); do
@@ -321,18 +325,17 @@ if [ "$CLIENT_SIZE" = 1024x768 ] && [ "$CLIENT" != xfreerdp3 ] && [ -x "$VINPUT"
 	[ "$got" = "$want" ] || fail "typed '$got', wanted '$want'"
 	echo "ok: typing arrives with the German layout: $got"
 
-	# Notches down: RDP says negative (towards the user), Wayland
-	# positive. sdl-freerdp3 drops the first wheel event it sees.
-	vin wheel 3
-	sleep 0.3
-	vin wheel 3
+	# One notch down: RDP says negative (towards the user), Wayland
+	# positive; a notch is 120.
+	vin wheel 1
 	for ((i = 0; i < 25; i++)); do
 		sleep 0.2
 		grep -qE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" && break
 	done
 	if grep -q "^DEBUG" "$dir/wayrdp.log"; then
-		grep -qE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" || fail "no wheel event"
-		echo "ok: the wheel arrives ($(grep -oE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" | tr '\n' ' '))"
+		wheel=$(grep -oE "Wheel vertical -[0-9]+" "$dir/wayrdp.log" | tr '\n' ' ')
+		[ "$wheel" = "Wheel vertical -120 " ] || fail "one notch gave '$wheel'"
+		echo "ok: one notch arrives as $wheel"
 	fi
 
 	eval "exec ${VIN[1]}>&-"
