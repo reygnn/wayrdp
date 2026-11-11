@@ -145,8 +145,10 @@ static void start_capture(struct wayrdp* self, bool immediate)
 				!= IMAGE_SOURCE_POWER_ON) {
 			wv_log(WV_LOG_DEBUG, "Output not powered on yet");
 			return;
+		} else if (rc < 0 && !wayland->zwlr_output_power_manager_v1) {
+			wv_log(WV_LOG_WARNING, "The compositor has no output power management: capturing may fail while the output is off");
 		} else if (rc < 0) {
-			wv_log(WV_LOG_WARNING, "No power management for the output. Capturing may fail.");
+			wv_log(WV_LOG_DEBUG, "Capturing without power control of the output");
 		}
 	}
 
@@ -338,7 +340,9 @@ static void on_capture_done(enum screencopy_result result,
 
 	switch (result) {
 	case SCREENCOPY_FATAL:
-		wv_log(WV_LOG_ERROR, "Failed to capture image. The source probably went away");
+		/* Mostly because its output went away; on_output_removed()
+		 * takes it from there. */
+		wv_log(WV_LOG_INFO, "The compositor ended the capture");
 		self->capturing = false;
 		break;
 	case SCREENCOPY_FAILED:
@@ -374,7 +378,8 @@ static void on_cursor_done(enum screencopy_result result,
 
 	switch (result) {
 	case SCREENCOPY_FATAL:
-		wv_log(WV_LOG_WARNING, "Pointer capture failed for good");
+		/* Like the picture's: mostly its output went away. */
+		wv_log(WV_LOG_INFO, "The compositor ended the pointer capture");
 		return;
 	case SCREENCOPY_FAILED:
 		if (self->capturing)

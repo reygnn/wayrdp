@@ -210,7 +210,9 @@ static void output_power_failed(void *data,
 		     struct zwlr_output_power_v1 *zwlr_output_power_v1)
 {
 	struct output* self = data;
-	wv_log(WV_LOG_WARNING, "Output %s power state failure",
+	/* The compositor ends the power control: the output is going away,
+	 * or another program controls its power now. */
+	wv_log(WV_LOG_INFO, "Output %s: power control ended (the output went away, or another program controls its power)",
 			self->state.name);
 	self->power_management_failed = true;
 	self->power = IMAGE_SOURCE_POWER_ON;
