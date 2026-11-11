@@ -124,12 +124,4 @@ void rdp_server_clipboard_changed(struct rdp_server* self, bool has_text);
  * to fd as UTF-8 and closes it. */
 void rdp_server_clipboard_paste(struct rdp_server* self, int fd);
 
-struct rdp_server_stats {
-	uint32_t frames;
-	uint64_t damage_area;
-	uint32_t frames_sent;
-};
-void rdp_server_get_stats(const struct rdp_server* self,
-		struct rdp_server_stats* stats);
-
 const char* rdp_freerdp_version(void);

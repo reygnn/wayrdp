@@ -15,9 +15,9 @@
  */
 
 /*
- * What the files in src/rdp/ share. main.c sees rdp/server.h, and
- * rdp/auth.h for the command line (--set-password, the config directory,
- * whether PAM is there).
+ * What the files in src/rdp/ share. main.c sees rdp/server.h, rdp/auth.h
+ * for the command line (--set-password, the config directory, whether PAM
+ * is there) and rdp/keymap.h for the lock keys of Synchronize.
  *
  * Threads: everything runs on aml's main loop except
  * - the encoding and the PAM checks, as aml_work in a worker: an encode job
@@ -149,7 +149,6 @@ struct rdp_peer {
 	/* Capabilities confirmed. */
 	bool gfx_ready;
 	bool gfx_dispatching;
-	uint32_t gfx_version;
 	bool gfx_surface;
 	uint16_t gfx_surface_id;
 
@@ -227,7 +226,6 @@ struct rdp_encoder {
 
 struct rdp_server {
 	struct rdp_server_config config;
-	struct rdp_server_stats stats;
 
 	freerdp_listener* listener;
 	struct aml_handler* listen_handlers[8];

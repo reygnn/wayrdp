@@ -377,7 +377,6 @@ static void on_encode_done(struct aml_work* work)
 			&& job->codec == rdp_peer_codec(peer)) {
 		uint64_t before = peer->bytes_sent;
 		rdp_peer_send(peer, job);
-		self->stats.frames_sent++;
 		self->frames_window++;
 		self->bytes_window += peer->bytes_sent - before;
 		self->encode_us_sum += job->encode_us;
@@ -388,11 +387,6 @@ static void on_encode_done(struct aml_work* work)
 
 	rdp_encode_job_free(job);
 	rdp_server_schedule(self);
-}
-
-static void free_job_work(void* userdata)
-{
-	/* The job is freed in on_encode_done; nothing to do here. */
 }
 
 /* The damage as rectangles inside the buffer. */
@@ -479,8 +473,9 @@ void rdp_server_schedule(struct rdp_server* self)
 	job->reset = self->encoder_reset;
 	self->encoder_reset = false;
 
+	/* on_encode_done frees the job. */
 	struct aml_work* work = aml_work_new(on_encode, on_encode_done, job,
-			free_job_work);
+			NULL);
 	if (!work || aml_start(aml_get_default(), work) < 0) {
 		wv_log(WV_LOG_ERROR, "Can't start the encoder");
 		if (work)
@@ -495,7 +490,6 @@ void rdp_server_schedule(struct rdp_server* self)
 void rdp_frame_submit(struct rdp_server* self, struct wv_buffer* buffer,
 		const struct pixman_region16* damage)
 {
-	self->stats.frames++;
 
 	uint32_t format = pixel_format_from_drm(buffer->format);
 	if (!format) {
@@ -551,12 +545,6 @@ void rdp_server_clipboard_paste(struct rdp_server* self, int fd)
 		rdp_clipboard_paste(self->active, fd);
 	else
 		close(fd);
-}
-
-void rdp_server_get_stats(const struct rdp_server* self,
-		struct rdp_server_stats* stats)
-{
-	*stats = self->stats;
 }
 
 const char* rdp_freerdp_version(void)

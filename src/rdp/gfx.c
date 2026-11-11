@@ -145,7 +145,6 @@ static UINT on_caps_advertise(RdpgfxServerContext* context,
 
 	if (self->gfx_timer)
 		aml_stop(aml_get_default(), self->gfx_timer);
-	self->gfx_version = caps.version;
 	self->gfx_ready = true;
 	wv_log(WV_LOG_INFO, "%s: graphics pipeline %s, RemoteFX Progressive",
 			self->client->hostname, version_name(caps.version));
