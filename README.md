@@ -211,9 +211,9 @@ terminals, serves it with wayrdp, and checks:
 
 - a SAM file others can read is refused
 - NLA with the right and a wrong password (`xfreerdp3 +auth-only`)
-- a second mwc runs sdl-freerdp3 (with `SDL_VIDEO_DRIVER=wayland`: without
-  `wp_fifo_v1` in mwc, SDL3 would take Xwayland and lose the first wheel
-  event), and a screenshot of it shows the magenta desktop
+- a second mwc runs sdl-freerdp3, and a screenshot of it shows the magenta
+  desktop (mwc needs `wp_fifo_v1`, there since mwc d48c2b9: without it SDL3
+  takes Xwayland, and the first wheel event gets lost)
 - `build/test/vinput` moves and clicks in the second mwc, and types physical
   keys there: A's pointer lands on the pixel, the click focuses a terminal in
   A, and what it gets is "Hallo Welt äöüß@€/zyAb" with `-k de` (umlauts,

@@ -4,8 +4,7 @@
 #    wayrdp serving it on localhost
 #  - xfreerdp3 +auth-only with the right and a wrong password (NLA)
 #  - mwc "B" on a second headless output, an RDP client in it
-#    (sdl-freerdp3 forced onto Wayland, or CLIENT=xfreerdp3 through
-#    Xwayland, or wlfreerdp3),
+#    (sdl-freerdp3, or CLIENT=xfreerdp3 through Xwayland, or wlfreerdp3),
 #    connected to wayrdp; a screenshot of B must show A's magenta desktop.
 #  - test/vinput moves, clicks and types in B, on the client window; A's
 #    pointer, focus and a terminal running cat must show it, German layout
@@ -147,11 +146,8 @@ if xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:wrong /cert:ignore \
 fi
 echo "ok: NLA with a wrong password refused"
 
-# Left alone, SDL3 takes X11 (Xwayland) in mwc, most likely because mwc
-# offers no wp_fifo_v1; through Xwayland the first wheel event gets lost.
-# Other clients ignore the variable.
 start_mwc b 1400x1000 '#000000' \
-	"SDL_VIDEO_DRIVER=wayland $CLIENT /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:$CLIENT_SIZE $CLIENT_OPTS /log-level:WARN >$dir/client.log 2>&1"
+	"$CLIENT /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:$CLIENT_SIZE $CLIENT_OPTS /log-level:WARN >$dir/client.log 2>&1"
 mwc_b=${pids[-1]}
 
 for ((i = 0; i < 150; i++)); do
