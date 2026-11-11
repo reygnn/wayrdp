@@ -107,6 +107,15 @@ static UINT on_caps_advertise(RdpgfxServerContext* context,
 {
 	struct rdp_peer* self = context->custom;
 
+	/* For the tests: a client that announced the pipeline and then sends
+	 * no capabilities, so that the timeout and the old way get tested. */
+	const char* ignore = getenv("WAYRDP_TEST_IGNORE_GFX_CAPS");
+	if (ignore && strcmp(ignore, "1") == 0) {
+		wv_log(WV_LOG_DEBUG, "%s: capabilities ignored (test)",
+				self->client->hostname);
+		return CHANNEL_RC_OK;
+	}
+
 	const RDPGFX_CAPSET* chosen = NULL;
 	for (size_t v = 0; v < sizeof(versions) / sizeof(versions[0]) && !chosen;
 			++v)

@@ -27,8 +27,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 * GFX-Pipeline, Stufe 1 auf main (2026-11-11): src/rdp/gfx.c, RemoteFX
   Progressive, FRAME_ACKNOWLEDGE, Rückfall auf den alten Weg ohne Pipeline
   beim Client oder ohne Caps in 3 s. Offen:
-  - Der Rückfall nach 3 s ohne Caps ist nicht getestet (kein Client an der
-    Hand, der die Pipeline ankündigt und dann schweigt).
   - Zwischenablage mit GFX: test/mwc-rdp.sh prüft sie, mit mstsc nicht
     eigens.
   - Weitere Stufen, nur wenn der Tunnel in der Firma es verlangt. Messung

@@ -269,7 +269,9 @@ picture), `CLIENT=xfreerdp3` (through Xwayland; no input part, it passes the
 pointer on once and then no more), `CLIENT=wlfreerdp3` (deprecated; it now
 and then hangs once pointer images come, and its clipboard turns text into
 `\u` escapes), `WAYRDP_NO_GFX=1 EXPECT_CODEC=RemoteFX` (the old way, no
-graphics pipeline), `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the
+graphics pipeline), `WAYRDP_TEST_IGNORE_GFX_CAPS=1 EXPECT_CODEC=RemoteFX`
+(wayrdp ignores the client's capabilities, as if it announced the pipeline
+and went silent: after 3 s the client gets the old way), `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the
 fallback; the FreeRDP clients always offer the pipeline and RemoteFX),
 `WAYRDP_WRAP="valgrind …"`.
 
