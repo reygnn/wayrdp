@@ -225,7 +225,8 @@ terminals, serves it with wayrdp, and checks:
 - the client follows when the output changes size
 - a fourth mwc runs `xfreerdp3 /dynamic-resolution` asking for 901×700: the
   output and the client get 900×700; `xdotool windowsize` makes the
-  client's window 1100×800 and the output follows
+  client's window 1100×800 and the output follows; once more on a still
+  desktop (the clock stopped), to 1200×900
 - a second login replaces the session
 - three wrong passwords lock the next connection out
 

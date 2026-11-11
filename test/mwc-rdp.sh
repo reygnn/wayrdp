@@ -14,7 +14,8 @@
 #  - a pointer image goes to the client.
 #  - mwc "D" runs xfreerdp3 /dynamic-resolution asking for 901x700: the
 #    output becomes 900x700 (even width), and when D's window is resized to
-#    1100x800 the output follows (display control).
+#    1100x800 the output follows (display control); again on a still
+#    desktop (the clock stopped), to 1200x900.
 #
 #   MWC=/path/to/mwc test/mwc-rdp.sh [build/wayrdp]
 #
@@ -445,6 +446,24 @@ if [ "$OUTPUT_MANAGEMENT" = 1 ]; then
 	grep -q "active, 1100x800" "$dir/wayrdp.log" || fail "the output didn't follow D's window to 1100x800"
 	[ "$(state a output_HEADLESS-1 w)" = 1100 ] || fail "A's output isn't 1100 wide"
 	echo "ok: the output follows D's window, 1100x800"
+
+	# Again on a still desktop: without the clock nothing is drawn, so a
+	# capture waiting with a buffer of the old size never ends unless
+	# wayrdp replaces it.
+	for p in $(pgrep -f "^sh -c while :; do date"); do
+		grep -qz "^WAYRDP_TEST_DIR=$dir\$" "/proc/$p/environ" 2>/dev/null \
+			&& kill "$p"
+	done
+	sleep 2
+	DISPLAY=$(sed -n 's/.*XWayland on DISPLAY=\(:[0-9]*\).*/\1/p' "$dir/mwc-d.log" | head -1) \
+		xdotool search --name FreeRDP windowsize 1200 900 >/dev/null 2>&1
+	for ((i = 0; i < 50; i++)); do
+		grep -q "active, 1200x900" "$dir/wayrdp.log" && break
+		sleep 0.2
+	done
+	grep -q "active, 1200x900" "$dir/wayrdp.log" \
+		|| fail "on a still desktop the output didn't follow D's window to 1200x900"
+	echo "ok: on a still desktop too, 1200x900"
 fi
 
 # Another login takes over, as when mstsc reconnects.

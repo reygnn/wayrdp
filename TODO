@@ -85,6 +85,14 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
   mwc/docs/wayland-rdp-upgrade.sh führt das durch (seit mwc fca2bcd).
 
+* mstsc über Bitvises "New Remote Desktop" schickt keine Layouts
+  (2026-11-11): im Fenster Scrollbalken, mit und ohne GFX; die Display-
+  Steuerung ist offen. Ein FreeRDP-Client (Remmina) schickt sie, und die
+  Ausgabe folgt. Vermutung: Bitvises .rdp-Datei (dynamic resolution /
+  smart sizing). Gegenprobe: Bitvise-C2S 127.0.0.1:13389 -> localhost:3389,
+  dann mstsc /v:127.0.0.1:13389 und das Fenster ziehen.
+  Abnahme: "monitor layout …" im Log, die Ausgabe folgt.
+
 * Kleinigkeiten
   - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.
   - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht

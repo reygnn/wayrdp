@@ -288,8 +288,14 @@ static void send_next_frame(struct wayrdp* self, uint64_t now)
 
 	wv_buffer_release(buffer);
 
+	/* Not wanted any more, maybe only for a moment (the client follows a
+	 * new size and reactivates): stop for real, so that "capturing" stays
+	 * true only while a frame is asked for and the next want starts it
+	 * again. Otherwise it waits forever on a still desktop. */
 	if (capture_wanted(self))
 		start_capture(self, false);
+	else
+		stop_capture(self);
 }
 
 static void on_rate_limit(struct aml_timer* timer)

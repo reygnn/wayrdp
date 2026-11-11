@@ -85,6 +85,12 @@ static void on_layout(struct aml_handler* handler)
 	ssize_t n = read(self->disp_eventfd, &count, sizeof(count));
 	(void)n;
 
+	pthread_mutex_lock(&self->disp_lock);
+	uint32_t w = self->disp_width, h = self->disp_height;
+	pthread_mutex_unlock(&self->disp_lock);
+	wv_log(WV_LOG_DEBUG, "%s: monitor layout %ux%u", self->client->hostname,
+			w, h);
+
 	/* Start the wait again: only the last of a burst counts. */
 	aml_stop(aml_get_default(), self->disp_timer);
 	aml_set_duration(self->disp_timer, SETTLE_US);
