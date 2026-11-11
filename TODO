@@ -79,7 +79,9 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 * Aus dem Code-Review vom 2026-11-11 (vier Agenten: Robustheit,
   Speicher, sauberer Code, Hotpath). Erledigt: Use-after-free beim Beenden
   (e11c9ac), Hauptschleife hing an einem Client, der nicht liest (0527872).
-  Nichts davon stört im Alltag mit mstsc und NLA.
+  Nichts davon stört im Alltag mit mstsc und NLA. Ebenfalls erledigt:
+  Planar-Reset (bf3ab0a), veraltete Kommentare, toter Code und die
+  Test-Schalter (Branch refactor/review-cleanup).
   - Hotpath:
     - GFX: FreeRDP zerlegt jeden Frame in DVC-Stücke von 1600 Bytes
       (DVC_MAX_DATA_PDU_SIZE), je mit eigener Queue-Nachricht, eventfd und
@@ -116,15 +118,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
       Hilfsfunktionen.
     - rdp_server_schedule() macht fünf Dinge; aufteilen. "Wunschgröße
       löschen" und "alles neu zeichnen" je dreimal kopiert.
-    - Veraltete Kommentare: auth.h (failures zählt nur geprüfte
-      Passwörter), internal.h (main.c sieht auch auth.h und keymap.h),
-      gfx.c:214 und peer.c (Planar gibt es nicht nur in den Tests).
-    - Toter Code: rdp_server_stats.damage_area, rdp_server_get_stats(),
-      gfx_version, free_job_work(), disp_lock_init.
-    - Test-Schalter (WAYRDP_FORCE_PLANAR, WAYRDP_NO_GFX,
-      WAYRDP_TEST_IGNORE_GFX_CAPS, WAYRDP_LOGIN_TIMEOUT) einmal beim Start
-      lesen und an einer Stelle beschreiben; WAYRDP_FORCE_PLANAR wird heute
-      bei jedem Frame gelesen.
     - Magische Zahlen (Zeigercache 32 dreifach, Puffergrößen),
       gemischte Rückgabekonventionen (int/bool/BOOL).
 

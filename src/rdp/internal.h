@@ -224,8 +224,28 @@ struct rdp_encoder {
 	uint32_t width, height;
 };
 
+/*
+ * Switches for the tests (test/mwc-rdp.sh, test/pam-rdp.sh; README,
+ * "Building and tests"), read once from the environment when the server
+ * starts. wayrdp warns at the start when one is on.
+ */
+struct rdp_test_switches {
+	/* WAYRDP_FORCE_PLANAR=1: Planar bitmaps, no graphics pipeline (the
+	 * FreeRDP clients always offer RemoteFX). */
+	bool force_planar;
+	/* WAYRDP_NO_GFX=1: no graphics pipeline, RemoteFX as surface bits. */
+	bool no_gfx;
+	/* WAYRDP_TEST_IGNORE_GFX_CAPS=1: the client's capabilities are
+	 * ignored, as if it announced the pipeline and went silent. */
+	bool ignore_gfx_caps;
+	/* WAYRDP_LOGIN_TIMEOUT=N: seconds a connection has to log on; 0 for
+	 * the default. */
+	uint32_t login_timeout_s;
+};
+
 struct rdp_server {
 	struct rdp_server_config config;
+	struct rdp_test_switches test;
 
 	freerdp_listener* listener;
 	struct aml_handler* listen_handlers[8];
@@ -314,7 +334,7 @@ void rdp_display_close(struct rdp_peer* self);
 /* gfx.c */
 /* Whether wayrdp offers the pipeline at all (not in the tests of the old
  * way). */
-bool rdp_gfx_offered(void);
+bool rdp_gfx_offered(const struct rdp_server* server);
 /* The client announced the pipeline, and it isn't up yet. */
 bool rdp_gfx_pending(const struct rdp_peer* self);
 /* Opens the channel once drdynvc is ready. */

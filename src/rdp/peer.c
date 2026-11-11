@@ -76,13 +76,13 @@ static void stop_handlers(struct rdp_peer* self)
 	}
 }
 
-/* How long a connection may take to log on. WAYRDP_LOGIN_TIMEOUT (seconds)
- * is for the tests. */
-static uint64_t login_timeout_us(void)
+/* How long a connection may take to log on. */
+#define LOGIN_TIMEOUT_S 30
+
+static uint64_t login_timeout_us(const struct rdp_server* server)
 {
-	const char* env = getenv("WAYRDP_LOGIN_TIMEOUT");
-	int s = env ? atoi(env) : 0;
-	return (uint64_t)(s > 0 ? s : 30) * 1000000;
+	uint32_t s = server->test.login_timeout_s;
+	return (uint64_t)(s ? s : LOGIN_TIMEOUT_S) * 1000000;
 }
 
 static void on_login_timeout(struct aml_timer* timer)
@@ -449,9 +449,9 @@ enum rdp_codec rdp_peer_codec(const struct rdp_peer* self)
 	if (self->gfx_ready)
 		return RDP_CODEC_GFX_PROGRESSIVE;
 
-	/* For the tests: every client at hand speaks RemoteFX. */
-	const char* force = getenv("WAYRDP_FORCE_PLANAR");
-	if (force && strcmp(force, "1") == 0)
+	/* The FreeRDP clients always offer RemoteFX; the tests force the
+	 * fallback mstsc gets without the pipeline. */
+	if (self->server->test.force_planar)
 		return RDP_CODEC_PLANAR;
 
 	rdpSettings* settings = self->client->context->settings;
@@ -662,7 +662,8 @@ static bool apply_settings(struct rdp_peer* self)
 		{ FreeRDP_NSCodec, false },
 		{ FreeRDP_SurfaceFrameMarkerEnabled, true },
 		{ FreeRDP_FrameMarkerCommandEnabled, true },
-		{ FreeRDP_SupportGraphicsPipeline, rdp_gfx_offered() },
+		{ FreeRDP_SupportGraphicsPipeline,
+			rdp_gfx_offered(self->server) },
 		{ FreeRDP_SupportDisplayControl, true },
 		{ FreeRDP_DesktopResize, true },
 		{ FreeRDP_RedirectClipboard, true },
@@ -786,7 +787,7 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 				&self->vcm_handler) < 0)
 		goto failure;
 
-	self->login_timer = aml_timer_new(login_timeout_us(), on_login_timeout,
+	self->login_timer = aml_timer_new(login_timeout_us(server), on_login_timeout,
 			self, NULL);
 	if (self->login_timer)
 		aml_start(aml_get_default(), self->login_timer);

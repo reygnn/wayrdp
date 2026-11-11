@@ -109,8 +109,7 @@ static UINT on_caps_advertise(RdpgfxServerContext* context,
 
 	/* For the tests: a client that announced the pipeline and then sends
 	 * no capabilities, so that the timeout and the old way get tested. */
-	const char* ignore = getenv("WAYRDP_TEST_IGNORE_GFX_CAPS");
-	if (ignore && strcmp(ignore, "1") == 0) {
+	if (self->server->test.ignore_gfx_caps) {
 		wv_log(WV_LOG_DEBUG, "%s: capabilities ignored (test)",
 				self->client->hostname);
 		return CHANNEL_RC_OK;
@@ -210,13 +209,10 @@ static void on_caps_timeout(struct aml_timer* timer)
 		give_up(self, "the client sent no capabilities");
 }
 
-/* Off for the tests of the old way; Planar exists only there. */
-bool rdp_gfx_offered(void)
+/* Off for the tests of the old way (surface bits, or Planar). */
+bool rdp_gfx_offered(const struct rdp_server* server)
 {
-	const char* no = getenv("WAYRDP_NO_GFX");
-	const char* planar = getenv("WAYRDP_FORCE_PLANAR");
-	return !(no && strcmp(no, "1") == 0)
-		&& !(planar && strcmp(planar, "1") == 0);
+	return !server->test.no_gfx && !server->test.force_planar;
 }
 
 bool rdp_gfx_pending(const struct rdp_peer* self)

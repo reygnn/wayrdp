@@ -83,6 +83,30 @@ static void on_stats_tick(struct aml_ticker* ticker)
 	self->encode_count = 0;
 }
 
+static bool env_on(const char* name)
+{
+	const char* value = getenv(name);
+	if (!value || strcmp(value, "1") != 0)
+		return false;
+	wv_log(WV_LOG_WARNING, "Test switch %s is on", name);
+	return true;
+}
+
+static void read_test_switches(struct rdp_test_switches* test)
+{
+	test->force_planar = env_on("WAYRDP_FORCE_PLANAR");
+	test->no_gfx = env_on("WAYRDP_NO_GFX");
+	test->ignore_gfx_caps = env_on("WAYRDP_TEST_IGNORE_GFX_CAPS");
+
+	const char* timeout = getenv("WAYRDP_LOGIN_TIMEOUT");
+	int s = timeout ? atoi(timeout) : 0;
+	if (s > 0) {
+		test->login_timeout_s = s;
+		wv_log(WV_LOG_WARNING, "Test switch WAYRDP_LOGIN_TIMEOUT is %d s",
+				s);
+	}
+}
+
 struct rdp_server* rdp_server_new(const struct rdp_server_config* config)
 {
 	static bool initialised = false;
@@ -97,6 +121,7 @@ struct rdp_server* rdp_server_new(const struct rdp_server_config* config)
 		return NULL;
 
 	self->config = *config;
+	read_test_switches(&self->test);
 	LIST_INIT(&self->peers);
 	LIST_INIT(&self->writers);
 	pixman_region_init(&self->pending);
