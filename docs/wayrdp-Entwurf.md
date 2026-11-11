@@ -191,7 +191,7 @@ wayrdp lauscht nur auf localhost und ist nur über den SSH-Tunnel erreichbar. Di
 
 ## Konfiguration, Kommandozeile, systemd
 
-wayrdp übernimmt Kommandozeile und Konfigurationsdatei von wayvnc, wo es passt. Während des Übergangs läuft es auf Port 3390 neben xrdp; später übernimmt es 3389, und xrdp fällt weg.
+wayrdp übernimmt Kommandozeile und Konfigurationsdatei von wayvnc, wo es passt. Es lauscht auf 3389. Geplant war ein Übergang auf 3390 neben xrdp; entschieden ist (2026-11-11): wayrdp wird zuhause getestet, bis es stabil läuft, und ersetzt xrdp dann direkt auf 3389.
 
 ```
 wayrdp [Optionen] [Adresse [Port]]       Standard: 127.0.0.1 3389
@@ -216,7 +216,7 @@ wayrdp [Optionen] [Adresse [Port]]       Standard: 127.0.0.1 3389
 | `output` | erste Ausgabe | wie `-o` |
 | `max_rate` | `30` | wie `-f` |
 
-`~/.config/systemd/user/wayrdp.service`, im Übergang auf Port 3390:
+`~/.config/systemd/user/wayrdp.service` (Auszug, vollständig in `contrib/wayrdp.service`):
 
 ```ini
 [Unit]
@@ -226,7 +226,7 @@ After=mwc.service
 
 [Service]
 Environment=WAYLAND_DISPLAY=wayland-0
-ExecStart=/usr/local/bin/wayrdp -k de 127.0.0.1 3390
+ExecStart=/usr/local/bin/wayrdp -k de
 Restart=on-failure
 RestartSec=1
 ProtectSystem=strict
@@ -239,11 +239,11 @@ NoNewPrivileges=yes
 WantedBy=mwc.service
 ```
 
-**Übergang mit Bitvise**
+**Umstellung mit Bitvise** (ohne Übergangsphase, Entscheidung 2026-11-11)
 
-1. In mwmrc `Mwm*outputManagement: true` setzen und mwc neu starten (der Schalter gilt nur beim Start). Dann wayrdp auf 3390 starten, xrdp und wayvnc bleiben auf 3389 bzw. 5900.
-2. In Bitvise eine zweite C2S-Regel `127.0.0.1:13390 → localhost:3390` anlegen und `mstsc /v:127.0.0.1:13390` verbinden.
-3. Läuft wayrdp im Alltag: xrdp und wayvnc stoppen und entfernen, wayrdp auf 3389 umstellen. Der RDP-Tab von Bitvise funktioniert dann wieder ohne eigene Regel.
+1. Erst wenn wayrdp zuhause stabil läuft: xrdp und wayvnc stoppen und entfernen.
+2. In mwmrc `Mwm*outputManagement: true` setzen und mwc neu starten (der Schalter gilt nur beim Start). Dann wayrdp auf 3389 starten.
+3. Der RDP-Tab von Bitvise funktioniert wie bisher mit xrdp, ohne eigene Regel.
 
 ## Code-Struktur und Fork-Plan
 
@@ -278,7 +278,7 @@ wayrdp entsteht als eigenes Repository, ein Fork von `any1/wayvnc` ab Tag v0.10.
 
 > *Diagramm: Meilensteine M0–M5 · 3 Tore · Aufwand geschätzt (nur im Doc)*
 
-Die Meilensteine laufen nacheinander, zusammen rund 4–5 Wochen (Schätzung). Ab Tor 2 läuft der Alltag über wayrdp, xrdp und wayvnc bleiben bis M5 als Rückfallebene.
+Die Meilensteine laufen nacheinander, zusammen rund 4–5 Wochen (Schätzung). Geplant war: ab Tor 2 läuft der Alltag über wayrdp, xrdp und wayvnc bleiben bis M5 als Rückfallebene. Entschieden ist (2026-11-11): wayrdp ersetzt xrdp erst, wenn es zuhause stabil läuft, und dann direkt.
 
 **Tests**
 

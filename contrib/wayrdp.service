@@ -2,8 +2,8 @@
 #
 # wayrdp next to mwc.service (see README).
 #
-# Port 3390 while xrdp still has 3389. Once wayrdp does the job: drop the
-# port (the default is 3389) and remove xrdp and wayvnc.
+# It takes RDP's port 3389 (the default): xrdp and wayvnc go before it is
+# installed, there is no phase next to them.
 #
 # Run "wayrdp --set-password" first (for -a nla, the default).
 [Unit]
@@ -13,7 +13,7 @@ After=mwc.service
 
 [Service]
 Environment=WAYLAND_DISPLAY=wayland-0
-ExecStart=/usr/local/bin/wayrdp -k de 127.0.0.1 3390
+ExecStart=/usr/local/bin/wayrdp -k de
 # mwc's socket may not be there yet when this starts.
 Restart=on-failure
 RestartSec=1

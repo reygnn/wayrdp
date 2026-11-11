@@ -16,8 +16,9 @@ design, milestones and open questions are in
 All milestones of the design are implemented and tested end to end against
 FreeRDP's clients (xfreerdp3, sdl-freerdp3) in a headless mwc. **Not yet
 tested with mstsc**, which is gate 1 of the design: does Windows' Remote
-Desktop take RemoteFX over surface bits smoothly? Until then xrdp and wayvnc
-stay as the way back.
+Desktop take RemoteFX over surface bits smoothly? It is tested at home until
+it runs fully stable; only then does it go on the server, straight on 3389 in
+place of xrdp and wayvnc.
 
 | Milestone | Content | State |
 |---|---|---|
@@ -26,7 +27,7 @@ stay as the way back.
 | M2 | Keyboard, mouse, wheel, Synchronize, Unicode | done, mstsc test open |
 | M3 | Clipboard in both directions | done, mstsc test open |
 | M4 | Size follows the mstsc window, pointer images | done, mstsc test open |
-| M5 | Hardening, `pam` mode, docs | done; the switch to 3389 is yours |
+| M5 | Hardening, `pam` mode, docs | done |
 
 ## What it does
 
@@ -84,8 +85,17 @@ of one core at 30 fps, 2.2 MB/s, 8 ms encoding per frame.
 ## Setting it up on the server
 
 This follows mwc's `docs/WAYLAND-RDP.md`: mwc runs headless as a user
-service, reached through a Bitvise SSH tunnel. wayrdp first runs next to xrdp
-and wayvnc, on port 3390, and takes over 3389 once it does the job.
+service, reached through a Bitvise SSH tunnel. wayrdp takes RDP's port 3389
+in place of xrdp and wayvnc; there is no phase next to them, so it goes on the
+server only once it runs stable.
+
+### 0. xrdp and wayvnc out
+
+```sh
+systemctl --user disable --now wayvnc
+sudo systemctl disable --now xrdp xrdp-sesman
+sudo apt purge xrdp wayvnc
+```
 
 ### 1. Build and install
 
@@ -131,31 +141,15 @@ cp contrib/wayrdp.service ~/.config/systemd/user/
 # adjust -k de to your notebook's layout
 systemctl --user daemon-reload
 systemctl --user enable --now wayrdp
-journalctl --user -u wayrdp          # "Listening on 127.0.0.1:3390", the thumbprint
+journalctl --user -u wayrdp          # "Listening on 127.0.0.1:3389", the thumbprint
 ```
 
 ### 4. Connect through Bitvise
 
-A second C2S rule `127.0.0.1:13390 → localhost:3390`, then
-`mstsc /v:127.0.0.1:13390`. Log in with your Linux user name and the RDP
-password. mstsc warns about the certificate on the first connection: compare
-the thumbprint with the log and accept it permanently. For the clipboard,
-tick it under *Local Resources*.
-
-### 5. Switch over
-
-Once wayrdp does the job day to day:
-
-```sh
-systemctl --user disable --now wayvnc
-sudo systemctl disable --now xrdp xrdp-sesman
-sudo apt purge xrdp wayvnc
-# in ~/.config/systemd/user/wayrdp.service: drop "3390" from ExecStart
-systemctl --user daemon-reload && systemctl --user restart wayrdp
-```
-
-wayrdp then listens on 3389, and Bitvise's RDP tab works again without a rule
-of its own.
+Bitvise's RDP tab works as it did with xrdp, no rule of its own. Log in with
+your Linux user name and the RDP password. mstsc warns about the certificate
+on the first connection: compare the thumbprint with the log and accept it
+permanently. For the clipboard, tick it under *Local Resources*.
 
 ## Login
 

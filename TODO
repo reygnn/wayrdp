@@ -78,11 +78,13 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Abnahme: die Warnung erscheint in test/mwc-rdp.sh nicht mehr nach den
   +auth-only-Verbindungen.
 
-* Test in der Firma. Auf dem Firmenserver mit mwc/docs/wayland-rdp-upgrade.sh
-  (wayrdp auf 3390 neben xrdp), Bitvise-C2S-Regel 13390 -> 3390, mstsc.
-  Prüfen: Bildrate und Gefühl über den echten Tunnel (Planar), Tastatur mit
-  dem Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
-  Erst danach "--switch" (xrdp aus, wayrdp auf 3389).
+* Einsatz in der Firma (Entscheidung 2026-11-11): erst wenn wayrdp zuhause
+  100 % stabil läuft (Test-VM, test/mwc-rdp.sh). Dann direkt auf 3389,
+  xrdp und wayvnc vorher entfernen, keine Phase auf 3390 daneben. Danach
+  prüfen: Bildrate und Gefühl über den echten Tunnel, Tastatur mit dem
+  Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
+  mwc/docs/wayland-rdp-upgrade.sh (mwc-Repo) geht noch vom Weg über 3390
+  aus und muss dort angepasst werden.
 
 * Kleinigkeiten
   - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.
