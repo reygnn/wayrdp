@@ -69,7 +69,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Verbindungsaufbau vergleichen.
 
 * Kleinigkeiten
-  - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.
   - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht
     ab): Testprozesse landen dort. distrobox stop räumt; oder die Box mit
     init=true anlegen.
