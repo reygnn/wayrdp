@@ -332,6 +332,7 @@ static UINT on_client_format_data_request(CliprdrServerContext* context,
 	req->server = self->server;
 	req->serial = self->serial;
 
+	wv_log(WV_LOG_DEBUG, "The client asks for the session clipboard");
 	if (handler(self)->read(userdata(self), on_session_text, req) < 0) {
 		free(req);
 		send_data_response(self, NULL, 0);

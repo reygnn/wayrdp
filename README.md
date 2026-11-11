@@ -232,6 +232,7 @@ meson test -C build                     # unit tests
 MWC=/path/to/mwc test/mwc-probe.sh      # capture from mwc, no client
 MWC=/path/to/mwc test/mwc-rdp.sh        # end to end, -a nla
 MWC=/path/to/mwc PAM_PASSWORD=… test/pam-rdp.sh   # end to end, -a pam
+MWC=/path/to/mwc test/clipboard-shutdown.sh   # exit with a clipboard read waiting (valgrind)
 ```
 
 The unit tests pin the scancode table, Pause, the wheel, UTF-8/UTF-16 with

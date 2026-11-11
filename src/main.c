@@ -1209,6 +1209,13 @@ int main(int argc, char* argv[])
 
 	wv_log(WV_LOG_INFO, "Exiting...");
 
+	/* Clipboard reads still waiting for the program that owns the
+	 * selection call back into the RDP server when they end: end them
+	 * while it is still there. */
+	if (self.have_data_control) {
+		data_control_destroy(&self.data_control);
+		self.have_data_control = false;
+	}
 	rdp_server_destroy(self.rdp);
 	self.rdp = NULL;
 rdp_failure:
