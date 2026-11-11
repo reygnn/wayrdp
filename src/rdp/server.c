@@ -235,7 +235,10 @@ void rdp_server_peer_activated(struct rdp_server* self, struct rdp_peer* peer)
 
 void rdp_server_peer_gone(struct rdp_server* self, struct rdp_peer* peer)
 {
-	if (!peer->logged_on)
+	/* Only a password that was checked and refused counts. A client
+	 * that hangs up before (mstsc does at its certificate prompt and
+	 * again to show its login dialog) tested nothing. */
+	if (!peer->logged_on && peer->password_checked)
 		rdp_auth_failure(&self->auth, gettime_us());
 
 	if (self->active == peer) {

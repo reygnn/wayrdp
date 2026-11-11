@@ -193,7 +193,11 @@ password with the setgid helper `unix_chkpwd`.
 
 Either way, three failed logins in a row lock new connections out for 30 s,
 at most four connections may wait for their logon at a time, and one that
-hasn't logged on after 30 s is closed.
+hasn't logged on after 30 s is closed. A failed login is a password that
+was checked and refused (NTLM against the SAM file, or PAM); a connection
+the client drops before that counts for nothing, since it tested no
+password. mstsc drops two such: at its certificate prompt, and again to
+show its login dialog.
 
 ## Security
 
@@ -254,7 +258,9 @@ terminals, serves it with wayrdp, and checks:
   client's window 1100×800 and the output follows; once more on a still
   desktop (the clock stopped), to 1200×900
 - a second login replaces the session
-- three wrong passwords lock the next connection out
+- connections dropped before a password is checked (an aborted TLS
+  handshake, a refused certificate; mstsc drops two such per connection)
+  don't count; three wrong passwords lock the next connection out
 
 Variants: `OUTPUT_MANAGEMENT=0` (mwc without it: the client gets the
 output's size), `CLIENT_SIZE=800x600`, `WAYRDP_OPTS=-r` (pointer in the

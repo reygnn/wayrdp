@@ -26,7 +26,9 @@
 # WAYRDP_FORCE_PLANAR=1 and EXPECT_CODEC=Planar (the FreeRDP clients always
 # offer the pipeline and RemoteFX).
 # Afterwards: the output changes size and the client follows, a second login
-# replaces the session, and three wrong passwords lock the next connection
+# replaces the session, connections dropped before the password (an aborted
+# TLS handshake, a refused certificate) don't count as failed logins, and
+# three wrong passwords lock the next connection
 # out.
 #
 # Needs mwc, foot, Xwayland, xfreerdp3, sdl-freerdp3, grim, wl-clipboard
@@ -472,6 +474,19 @@ xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:"$PASSWORD" /cert:ignore \
 	+auth-only >"$dir/auth-replace.log" 2>&1
 grep -q "New connection replaces" "$dir/wayrdp.log" || fail "a second login didn't replace the session"
 echo "ok: a second login replaces the session"
+
+# Connections dropped before a password is checked don't count: mstsc
+# drops two of them at its certificate prompt and to show its login
+# dialog. Six of them, then the right password still gets in.
+for i in 1 2 3; do
+	python3 -I "$(dirname "$0")/tls-abort.py" "$PORT" >/dev/null 2>&1
+	xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:"$PASSWORD" /cert:deny \
+		+auth-only >"$dir/auth-drop$i.log" 2>&1
+done
+xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:"$PASSWORD" /cert:ignore \
+	+auth-only >"$dir/auth-after-drops.log" 2>&1 \
+	|| fail "connections dropped before the password locked the login out"
+echo "ok: connections dropped before the password don't count"
 
 # Three wrong passwords in a row (each login above reset the count).
 for i in 1 2 3; do

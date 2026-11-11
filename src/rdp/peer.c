@@ -25,6 +25,9 @@
 #include <freerdp/crypto/certificate.h>
 #include <freerdp/crypto/privatekey.h>
 #include <winpr/synch.h>
+#include <winpr/ntlm.h>
+#include <winpr/sam.h>
+#include <winpr/sspi.h>
 
 #include "rdp/internal.h"
 #include "log.h"
@@ -198,6 +201,45 @@ static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identi
 
 static BOOL activate(struct rdp_peer* self);
 
+/*
+ * NTLM asks for the user's NTLMv2 hash when the client's AUTHENTICATE
+ * message comes, that is when a password is really checked. The hash
+ * comes from the SAM file as WinPR would take it (user and domain, then
+ * the user alone); WinPR then checks the client's proof with it.
+ */
+static SECURITY_STATUS on_ntlm_hash(void* client,
+		const SEC_WINNT_AUTH_IDENTITY* identity, const SecBuffer* proof,
+		const BYTE* randkey, const BYTE* mic, const SecBuffer* micvalue,
+		BYTE* ntlmhash)
+{
+	freerdp_peer* peer = client;
+	struct rdp_peer* self = peer_from_context(peer->context);
+	self->password_checked = true;
+
+	if (!identity || !(identity->Flags & SEC_WINNT_AUTH_IDENTITY_UNICODE))
+		return SEC_E_NO_CREDENTIALS;
+
+	WINPR_SAM* sam = SamOpen(self->server->config.sam_file, TRUE);
+	if (!sam)
+		return SEC_E_NO_CREDENTIALS;
+
+	LPCWSTR user = (LPCWSTR)identity->User;
+	LPCWSTR domain = (LPCWSTR)identity->Domain;
+	UINT32 user_len = identity->UserLength * sizeof(WCHAR);
+	UINT32 domain_len = identity->DomainLength * sizeof(WCHAR);
+	WINPR_SAM_ENTRY* entry = SamLookupUserW(sam, user, user_len, domain,
+			domain_len);
+	if (!entry)
+		entry = SamLookupUserW(sam, user, user_len, NULL, 0);
+
+	BOOL ok = entry && NTOWFv2FromHashW(entry->NtHash, user, user_len,
+			domain, domain_len, ntlmhash);
+	if (entry)
+		SamFreeEntry(sam, entry);
+	SamClose(sam);
+	return ok ? SEC_E_OK : SEC_E_NO_CREDENTIALS;
+}
+
 /* ---- -a pam ---- */
 
 struct pam_job {
@@ -228,6 +270,7 @@ static void on_pam_done(struct aml_work* work)
 
 	if (self) {
 		self->pam_pending = false;
+		self->password_checked = true;
 		if (!job->ok) {
 			wv_log(WV_LOG_WARNING, "%s: wrong password for %s",
 					self->client->hostname, job->user);
@@ -618,6 +661,8 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 		goto failure;
 
 	client->Logon = on_logon;
+	if (self->server->config.auth == RDP_AUTH_NLA)
+		client->SspiNtlmHashCallback = on_ntlm_hash;
 	client->PostConnect = on_post_connect;
 	client->Activate = on_activate;
 

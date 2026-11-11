@@ -97,15 +97,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   einer Ubuntu-VM probieren; klappt es dort, die Unterschiede im
   Verbindungsaufbau vergleichen.
 
-* Sperre nach drei Fehlversuchen und mstsc: mstsc verbraucht pro
-  Verbindung oft zwei davon, bevor man tippt (erst ein automatischer
-  Versuch mit gespeicherten oder Windows-Anmeldedaten, dann ein Abbruch
-  mitten in NLA, um den Dialog zu zeigen). Ausweg: Verbindungen, die vor
-  der Passwortprüfung abbrechen, nicht als Fehlversuch zählen; nur eine
-  wirklich abgelehnte Anmeldung (MIC falsch, Benutzer unbekannt) zählt.
-  Abnahme: mstsc mit falschen gespeicherten Daten verbraucht einen
-  Versuch, nicht zwei; test/mwc-rdp.sh und test/pam-rdp.sh bleiben grün.
-
 * Kleinigkeiten
   - distrobox.ini: libjansson-dev und libgbm-dev braucht wayrdp nicht mehr.
   - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht

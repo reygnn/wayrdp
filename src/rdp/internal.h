@@ -65,6 +65,11 @@ struct rdp_peer {
 	struct aml_idle* close_idle;
 
 	bool logged_on;
+	/* A password was checked (NTLM against the SAM file, or PAM): only
+	 * then a connection that doesn't log on counts as a failed login.
+	 * mstsc drops connections before that (certificate prompt, its own
+	 * login dialog), and those must not lock it out. */
+	bool password_checked;
 	/* The connection sequence is through (PostConnect). */
 	bool connected;
 	bool activated;
