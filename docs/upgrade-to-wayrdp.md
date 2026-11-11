@@ -19,8 +19,8 @@ while.
 - Work from a **plain SSH session**, not from the RDP desktop: stopping xrdp
   ends that one. Between section 3 and section 6 there is no RDP at all.
 - Keep the SSH session open until section 7 has worked.
-- The way back stays until section 9: a copy of `/etc/xrdp` (section 3) and
-  the wayvnc build directories.
+- The way back stays until section 9: a copy of `/etc/xrdp` (section 3),
+  wayvnc's service and configuration (section 4) and the build directories.
 
 ## 1. Look what is there
 
@@ -33,7 +33,8 @@ dpkg -l | grep -E 'xrdp|wayvnc|neatvnc|libaml|tigervnc|xorgxrdp' | awk '{print $
 # files installed by hand
 ls -la /usr/local/bin | grep -iE 'vnc|mwc|wayrdp'
 find /usr/local/lib* /usr/local/include /usr/local/share -maxdepth 3 \
-    \( -iname '*neatvnc*' -o -iname '*aml*' -o -iname '*wayvnc*' \) 2>/dev/null
+    \( -iname '*neatvnc*' -o -iname '*wayvnc*' -o -name 'libaml*' \
+       -o -name 'aml.h' -o -name 'aml.pc' \) 2>/dev/null
 # services
 systemctl list-unit-files | grep -iE 'xrdp|vnc'
 systemctl --user list-unit-files | grep -iE 'vnc|mwc|wayrdp'
@@ -69,6 +70,7 @@ Only if this worked, go on. If not, nothing has changed yet.
 
 ```sh
 sudo cp -a /etc/xrdp ~/xrdp-backup          # the way back, see the end
+sudo chown -R "$USER": ~/xrdp-backup
 sudo systemctl disable --now xrdp xrdp-sesman
 sudo apt purge xrdp xorgxrdp
 sudo rm -rf /etc/xrdp /var/log/xrdp*.log    # what purge leaves, if anything
@@ -83,11 +85,14 @@ ss -ltnp | grep ':3389' || echo "3389 is free"
 
 ## 4. wayvnc out
 
-Stop it first:
+Stop it first; its service and configuration go aside, not away (the way
+back, until section 9):
 
 ```sh
 systemctl --user disable --now wayvnc
-rm -f ~/.config/systemd/user/wayvnc.service
+mkdir -p ~/wayvnc-backup
+mv ~/.config/systemd/user/wayvnc.service ~/wayvnc-backup/ 2>/dev/null
+mv ~/.config/wayvnc ~/wayvnc-backup/config 2>/dev/null
 systemctl --user daemon-reload
 ```
 
@@ -126,12 +131,6 @@ If wayvnc came as a package instead: `sudo apt purge wayvnc` (and
 `libneatvnc0`, `libaml0` if apt doesn't take them along with
 `sudo apt autoremove`).
 
-Its configuration goes too:
-
-```sh
-rm -rf ~/.config/wayvnc
-```
-
 Check that nothing is left that still needs it:
 
 ```sh
@@ -150,7 +149,7 @@ Environment=MWC_VIRTUAL_INPUT=1
 ```
 
 In `~/.config/mwc/mwmrc`, so that the output takes the size mstsc connects
-with:
+with (add it only if it isn't there yet; then mwc needs a restart):
 
 ```
 Mwm*outputManagement: true
@@ -163,6 +162,9 @@ the session with it. mwc reads this switch only at its start:
 ```sh
 systemctl --user restart mwc
 ```
+
+**The restart ends the session:** every open window is gone, mwc can't keep
+its clients. Save what is open first, or do it when nothing is.
 
 ## 6. wayrdp as a service
 
@@ -221,7 +223,8 @@ saved; wayrdp has no login window.
 ## 9. Last, once it has done the job for a while
 
 - The old build directories: `rm -rf ~/wayvnc ~/neatvnc ~/aml` (the paths
-  from section 1), and `~/xrdp-backup`. Until then they are the way back.
+  from section 1), and the copies `rm -rf ~/xrdp-backup ~/wayvnc-backup`.
+  Until then they are the way back.
 - Packages only xrdp and the VNC build needed: `sudo apt autoremove --purge`,
   and look at what apt lists before saying yes; `xwayland` must stay.
 - Was the server on mwm (X11) before mwc: mwc's
@@ -233,10 +236,21 @@ Before section 3 nothing has changed. After it:
 
 ```sh
 systemctl --user disable --now wayrdp
+
+# wayvnc, in this order: aml, neatvnc, wayvnc (each needs the one before)
+sudo ninja -C ~/aml/build install
+sudo ninja -C ~/neatvnc/build install
+sudo ninja -C ~/wayvnc/build install
+sudo ldconfig
+cp ~/wayvnc-backup/wayvnc.service ~/.config/systemd/user/
+cp -r ~/wayvnc-backup/config ~/.config/wayvnc
+systemctl --user daemon-reload
+systemctl --user enable --now wayvnc
+
+# xrdp, with your configuration
 sudo apt install xrdp
-# wayvnc: ninja -C ~/wayvnc/build install (and neatvnc, aml before it)
+sudo cp ~/xrdp-backup/xrdp.ini /etc/xrdp/   # and whatever else had changes
+sudo systemctl restart xrdp
 ```
 
-The xrdp configuration is in `~/xrdp-backup` (section 3): copy back what had
-changes of your own, e.g. `sudo cp ~/xrdp-backup/xrdp.ini /etc/xrdp/`, then
-`sudo systemctl restart xrdp`.
+If wayvnc came as a package instead: `sudo apt install wayvnc`.
