@@ -121,15 +121,26 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   - Version 0.5.3 (2026-11-11, include/version.h). Tag/Release nur auf
     Nachfrage.
 
-* Bekannte Eigenheit von wlroots 0.19.2 (von mwc, nicht selbst
-  nachgeprüft): wlroots hält pro Monitor eine interne Aufnahmequelle und
-  legt sie nur beim allerersten Aufnahmewunsch an. Hat ein anderes
-  Programm (grim, ein wayvnc) als Erstes aufgenommen, während der Monitor
-  aus war, bleibt auch wayrdps Aufnahme ohne Bild, obwohl wayrdp vor jeder
-  Sitzung einschaltet. Selten; erledigt sich mit wlroots 0.20.2. Erkennbar
-  daran, dass nach "Init done" kein "Desktop is WxH" kommt; Abhilfe bis
-  dahin: mwc neu starten. mwcs eigene Tests dafür: make rdp-test (seit mwc
-  a0a7766).
+* Bekannte Eigenheit von wlroots 0.19.2, geprüft am 2026-11-11 (Code und
+  Versuch): wlroots legt die Aufnahmequelle einer Ausgabe einmal an (ein
+  Addon an der Ausgabe, jedes create_source bekommt dieselbe) und nimmt
+  Größe und Formate aus einem Swapchain-Test. Bei abgeschalteter Ausgabe
+  scheitert der ("Tried to commit a buffer on a disabled output"), die
+  Quelle bleibt bei 0x0 ohne Formate und wird nur bei einem Commit mit
+  Modus- oder Formatwechsel neu. mwc schaltet mit dem alten Modus wieder
+  ein, und wlr_output_commit_state() streicht unveränderte Felder, also
+  bleibt sie leer. Versuch (mwcs powerc/capturec, headless):
+  - aus, ein, Aufnahme: Bild; aus, ein, wayrdp --probe: Bild.
+  - aus, Aufnahme bei aus, ein, Aufnahme: kein Bild; danach wayrdp:
+    "Buffer dimensions: 0x0", "No supported buffer formats", kein Bild.
+  - dasselbe, dann ein anderer Modus (outputc 1000x700): Bild.
+  wayrdp selbst löst es nicht aus (schaltet vor jeder Sitzung ein); nur ein
+  anderes Programm (grim, wayvnc), das als Erstes bei abgeschaltetem
+  Monitor aufnimmt. Erkennbar an den beiden Zeilen oben im Log. Abhilfe:
+  ein Moduswechsel (mit Mwm*outputManagement reicht es, mit einer anderen
+  Fenstergröße zu verbinden; oder wlr-randr), sonst mwc neu starten.
+  Erledigt sich mit wlroots 0.20.2. mwcs Tests für wayrdps Fälle: make
+  rdp-test (seit mwc a0a7766).
 
 * Offene Fragen aus dem Entwurf, unverändert offen
   - Kann mwc die virtuellen Eingabeprotokolle nur wayrdp anbieten statt allen
