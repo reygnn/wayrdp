@@ -3,8 +3,9 @@ TODO
 Stand 2026-11-11: M0 bis M5 aus docs/wayrdp-Entwurf.md und die GFX-Pipeline
 (RemoteFX Progressive) sind auf main. Mit mstsc (Windows-11-VM auf watermoon,
 über Bitvise): Anmeldung per NLA, GFX 10.6, gezogenes Fenster 29 fps bei
-890 kB/s (vorher Planar: 7,9 fps, 1863 kB/s), Text scharf, Wiederverbinden;
-Zwischenablage-Kanal, Zeigerbilder und Synchronize am Vortag ohne GFX. Die Größe übernimmt wayrdp beim
+890 kB/s (vorher Planar: 7,9 fps, 1863 kB/s), Text scharf, Wiederverbinden,
+Zwischenablage in beide Richtungen mit Umlauten; Zeigerbilder und
+Synchronize am Vortag ohne GFX. Die Größe übernimmt wayrdp beim
 Verbinden; während der Sitzung meldet mstsc keine (Einschränkung von mstsc,
 siehe unten und README). Remmina und xfreerdp /dynamic-resolution passen sie
 an, auch auf ruhigem Desktop (Fix vom 2026-11-11). Die Sperre zählt nur
@@ -27,8 +28,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 * GFX-Pipeline, Stufe 1 auf main (2026-11-11): src/rdp/gfx.c, RemoteFX
   Progressive, FRAME_ACKNOWLEDGE, Rückfall auf den alten Weg ohne Pipeline
   beim Client oder ohne Caps in 3 s. Offen:
-  - Zwischenablage mit GFX: test/mwc-rdp.sh prüft sie, mit mstsc nicht
-    eigens.
   - Weitere Stufen, nur wenn der Tunnel in der Firma es verlangt, in
     dieser Reihenfolge. Messung (Terminal scrollt, 1280x800, 30 fps):
     Progressive 6,8 MB/s, RemoteFX alt 6,9 MB/s, Planar 9,3 MB/s.
