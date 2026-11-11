@@ -162,7 +162,9 @@ static UINT on_frame_ack(RdpgfxServerContext* context,
 			&& rdp_flow_suspend(&self->flow))
 		wv_log(WV_LOG_DEBUG, "%s: frame acknowledgements suspended",
 				self->client->hostname);
-	rdp_flow_ack(&self->flow, pdu->frameId);
+	if (!rdp_flow_ack(&self->flow, pdu->frameId))
+		wv_log(WV_LOG_DEBUG, "%s: ack for frame %u ignored (sent %u)",
+				self->client->hostname, pdu->frameId, self->flow.sent);
 	if (self->server->active == self)
 		rdp_server_schedule(self->server);
 	return CHANNEL_RC_OK;

@@ -58,7 +58,11 @@ void rdp_flow_reset(struct rdp_flow* self, bool acks);
 void rdp_flow_continue(struct rdp_flow* self);
 /* The id for the next frame. */
 uint32_t rdp_flow_next_id(struct rdp_flow* self);
-void rdp_flow_ack(struct rdp_flow* self, uint32_t id);
+/* An ack counts only for a frame between the last one acknowledged and
+ * the last one sent (ids wrap). One from before a reset, or a late one for
+ * an older frame, would otherwise make the server wait for nothing. false
+ * if it didn't count. */
+bool rdp_flow_ack(struct rdp_flow* self, uint32_t id);
 /* The client stops acknowledging (the pipeline's SUSPEND); true if it was
  * waited for until now. */
 bool rdp_flow_suspend(struct rdp_flow* self);

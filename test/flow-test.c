@@ -108,6 +108,58 @@ static int test_continue_and_reset(void)
 	return 0;
 }
 
+/* Acks from before a reset, from ahead, and late ones are ignored. */
+static int test_bad_acks(void)
+{
+	struct rdp_flow f;
+	rdp_flow_reset(&f, true);
+	rdp_flow_next_id(&f);
+	rdp_flow_next_id(&f);
+	/* An ack for frame 57 from before the reset. */
+	ASSERT_FALSE(rdp_flow_ack(&f, 57));
+	ASSERT_FALSE(f.ack_seen);
+	ASSERT_INT_EQ(2, (int)rdp_flow_in_flight(&f));
+	/* The timeout still knows no ack ever came. */
+	ASSERT_INT_EQ(RDP_FLOW_NEVER_ACKED, rdp_flow_timeout(&f));
+
+	rdp_flow_reset(&f, true);
+	for (int i = 0; i < 4; ++i)
+		rdp_flow_next_id(&f);
+	ASSERT_TRUE(rdp_flow_ack(&f, 3));
+	/* A late ack for frame 2 doesn't take the count back. */
+	ASSERT_FALSE(rdp_flow_ack(&f, 2));
+	ASSERT_INT_EQ(1, (int)rdp_flow_in_flight(&f));
+	ASSERT_TRUE(rdp_flow_ack(&f, 3));
+	ASSERT_TRUE(rdp_flow_ack(&f, 4));
+	ASSERT_FALSE(rdp_flow_ack(&f, 5));
+
+	/* A new surface: late acks for the old one are ignored. */
+	rdp_flow_next_id(&f);
+	rdp_flow_next_id(&f);
+	rdp_flow_continue(&f);
+	ASSERT_FALSE(rdp_flow_ack(&f, 5));
+	ASSERT_FALSE(rdp_flow_must_wait(&f));
+	return 0;
+}
+
+/* Ids wrap around. */
+static int test_wrap(void)
+{
+	struct rdp_flow f;
+	rdp_flow_reset(&f, true);
+	f.sent = f.acked = UINT32_MAX - 1;
+	uint32_t a = rdp_flow_next_id(&f);
+	uint32_t b = rdp_flow_next_id(&f);
+	ASSERT_TRUE(a == UINT32_MAX && b == 0);
+	ASSERT_TRUE(rdp_flow_must_wait(&f));
+	ASSERT_TRUE(rdp_flow_ack(&f, a));
+	ASSERT_INT_EQ(1, (int)rdp_flow_in_flight(&f));
+	ASSERT_TRUE(rdp_flow_ack(&f, b));
+	ASSERT_INT_EQ(0, (int)rdp_flow_in_flight(&f));
+	ASSERT_FALSE(rdp_flow_ack(&f, 1));
+	return 0;
+}
+
 int main(void)
 {
 	int r = 0;
@@ -117,5 +169,7 @@ int main(void)
 	RUN_TEST(test_ack_lost);
 	RUN_TEST(test_suspend);
 	RUN_TEST(test_continue_and_reset);
+	RUN_TEST(test_bad_acks);
+	RUN_TEST(test_wrap);
 	return r;
 }

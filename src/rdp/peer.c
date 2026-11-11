@@ -616,7 +616,9 @@ static BOOL on_suppress_output(rdpContext* context, BYTE allow,
 static BOOL on_frame_ack(rdpContext* context, UINT32 frame_id)
 {
 	struct rdp_peer* self = peer_from_context(context);
-	rdp_flow_ack(&self->flow, frame_id);
+	if (!rdp_flow_ack(&self->flow, frame_id))
+		wv_log(WV_LOG_DEBUG, "%s: ack for frame %u ignored (sent %u)",
+				self->client->hostname, frame_id, self->flow.sent);
 	if (self->server->active == self)
 		rdp_server_schedule(self->server);
 	return TRUE;

@@ -34,10 +34,13 @@ uint32_t rdp_flow_next_id(struct rdp_flow* self)
 	return ++self->sent;
 }
 
-void rdp_flow_ack(struct rdp_flow* self, uint32_t id)
+bool rdp_flow_ack(struct rdp_flow* self, uint32_t id)
 {
+	if ((int32_t)(id - self->acked) < 0 || (int32_t)(self->sent - id) < 0)
+		return false;
 	self->acked = id;
 	self->ack_seen = true;
+	return true;
 }
 
 bool rdp_flow_suspend(struct rdp_flow* self)

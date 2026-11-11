@@ -81,8 +81,8 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   (e11c9ac), Hauptschleife hing an einem Client, der nicht liest (0527872).
   Nichts davon stört im Alltag mit mstsc und NLA. Ebenfalls erledigt:
   Planar-Reset (bf3ab0a), veraltete Kommentare, toter Code, die
-  Test-Schalter (cb0c9e9) und die Flusskontrolle an einer Stelle
-  (src/rdp/flow.c).
+  Test-Schalter (cb0c9e9), die Flusskontrolle an einer Stelle
+  (src/rdp/flow.c) und die Prüfung der Acks.
   - Hotpath:
     - GFX: FreeRDP zerlegt jeden Frame in DVC-Stücke von 1600 Bytes
       (DVC_MAX_DATA_PDU_SIZE), je mit eigener Queue-Nachricht, eventfd und
@@ -100,11 +100,6 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
       Eigener Worker für PAM.
     - Leseanfragen der Zwischenablage vom Client sind nicht begrenzt (je ein
       Pipe und Timer): eine offene pro Client, weitere mit FAIL beantworten.
-    - Acks werden nicht geprüft: ein Ack über die zuletzt gesendete id
-      hinaus (oder ein verspätetes nach einer Reaktivierung auf dem alten
-      Weg) hält die Ausgabe 250 ms an. In rdp_flow_ack() Acks mit
-      (int32_t)(sent - id) < 0 verwerfen, mit einem Fall in
-      test/flow-test.c.
     - RefreshRect: TS_RECTANGLE16 ist inklusiv, server.c rechnet exklusiv
       (letzte Zeile/Spalte fehlt), verdrehte Rechtecke prüfen.
     - display.c: rdp_display_close() aus on_dvc_created läuft, während
