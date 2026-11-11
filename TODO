@@ -84,26 +84,18 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Firmen-Notebook (Layout, -k), Zwischenablage, Wiederverbinden.
   mwc/docs/wayland-rdp-upgrade.sh führt das durch (seit mwc fca2bcd).
 
-* mstsc schickt keine Fenstergrößen (2026-11-11). Die Anfangsgröße beim
-  Verbinden geht ("output follows the client"), ein Größenwechsel
-  während der Sitzung nicht: im Fenster Scrollbalken, größer als die
-  Auflösung lässt es sich nicht ziehen, und im Log kommt kein "monitor
-  layout". Ausgeschlossen:
-  - Bitvises Knopf: mstsc direkt (Bitvise-C2S 13389 -> 3389) genauso.
-  - Default.rdp: gibt es nicht; eine eigene .rdp mit dynamic
-    resolution:i:1, smart sizing:i:0, screen mode id:i:1 genauso.
-  - GFX: mit WAYRDP_NO_GFX=1 genauso.
-  - Reihenfolge Display-Steuerung/GFX: beides probiert, genauso.
-  - Caps vor dem CREATE_RESPONSE: gehen seit fix/disp-caps-after-create
-    erst danach (wie gnome-remote-desktop), genauso.
-  Remmina und xfreerdp /dynamic-resolution schicken Layouts über denselben
-  Kanal, die Ausgabe folgt. mstsc entscheidet also anderswo, dass der
-  Server die Größe nicht ändern kann. Noch zu prüfen: was ein Windows-
-  Server bzw. gnome-remote-desktop sonst meldet (Server-Core-Version,
-  Monitor Layout PDU, MaxNumMonitors 16 und Faktoren 8192x8192 statt
-  1 und 8192x4320); ein Mitschnitt von mstsc gegen gnome-remote-desktop
-  würde es zeigen.
-  Abnahme: "monitor layout …" im Log, wenn das mstsc-Fenster gezogen wird.
+* mstsc ändert die Größe während der Sitzung nicht (2026-11-11), Stand:
+  Einschränkung von mstsc, als solche im README. Die Anfangsgröße geht.
+  Kein "monitor layout" im Fenster (Scrollbalken), auch nicht im Vollbild
+  nach einem Wechsel der Windows-Auflösung (screen mode id:i:2, dynamic
+  resolution:i:1), über Bitvise wie direkt, mit und ohne GFX, mit den
+  Caps vor oder nach dem CREATE_RESPONSE. Server-Core-Version ist 10.x.
+  xrdp hat dasselbe gefunden (Wiki "On EGFX architecture and Dynamic
+  Monitors": "MSTSC supports nearly everything, except resize-on-the-fly",
+  Ausnahme Wechsel zwischen Monitoren), ein FreeRDP-Issue (#6801) auch.
+  Nur falls es wieder wichtig wird: mstsc gegen gnome-remote-desktop in
+  einer Ubuntu-VM probieren; klappt es dort, die Unterschiede im
+  Verbindungsaufbau vergleichen.
 
 * Sperre nach drei Fehlversuchen und mstsc: mstsc verbraucht pro
   Verbindung oft zwei davon, bevor man tippt (erst ein automatischer

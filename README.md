@@ -17,8 +17,9 @@ All milestones of the design are implemented and tested end to end against
 FreeRDP's clients (xfreerdp3, sdl-freerdp3) in a headless mwc. Tested by
 hand with mstsc (Windows 11 VM through Bitvise) and Remmina: mstsc takes
 RemoteFX only over the graphics pipeline, which wayrdp now speaks (the
-numbers are under "What it does"). Open: mstsc started from Bitvise's Remote Desktop button sends no
-window sizes (see `TODO`). It is tested at home until it runs fully stable;
+numbers are under "What it does"). mstsc takes the size it connects with but
+doesn't follow its window afterwards (see Size). It is tested at home until
+it runs fully stable;
 only then does it go on the server, straight on 3389 in place of xrdp and
 wayvnc.
 
@@ -28,7 +29,7 @@ wayvnc.
 | M1 | Listener, peer, TLS, NLA, RemoteFX, flow control | done, mstsc test open |
 | M2 | Keyboard, mouse, wheel, Synchronize, Unicode | done, mstsc test open |
 | M3 | Clipboard in both directions | done, mstsc test open |
-| M4 | Size follows the mstsc window, pointer images | done, mstsc test open |
+| M4 | Size follows the client window, pointer images | done; mstsc only at connect |
 | M5 | Hardening, `pam` mode, docs | done |
 
 ## What it does
@@ -72,8 +73,14 @@ wayvnc.
   5 s gets nothing. No images or files.
 - **Size:** with `Mwm*outputManagement: true` in mwmrc the output takes the
   size the client asks for when it connects, and follows its window
-  afterwards (display control: mstsc sends a new layout whenever its window
-  changes; wayrdp waits 200 ms for it to settle). Sizes stay within
+  afterwards (display control; wayrdp waits 200 ms for it to settle) with
+  clients that send layouts: Remmina, xfreerdp `/dynamic-resolution`.
+  **mstsc sends none** to wayrdp, neither for its window nor full screen
+  after a change of the local resolution, whatever the .rdp says; xrdp
+  found the same ("MSTSC supports nearly everything, except
+  resize-on-the-fly"), it seems to do it for Windows hosts only. With mstsc
+  the size is the one it connects with: full screen gives the screen's
+  resolution; after a change, reconnect (the session stays). Sizes stay within
   200–8192 a side, the width even, at most 8192×4320 pixels; the client is
   told when its size had to change. Without output management (or if mwc
   refuses a size) the client gets the output's size (`outputMode`).
