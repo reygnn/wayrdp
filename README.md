@@ -7,30 +7,22 @@ xrdp and wayvnc in between.
 
 wayrdp is a fork of [wayvnc](https://github.com/any1/wayvnc) 0.10.2. The
 Wayland side (capture, virtual keyboard and pointer, clipboard, output
-management) is wayvnc's; the VNC side (neatvnc) is replaced by FreeRDP 3. The
-design, milestones and open questions are in
-[docs/wayrdp-Entwurf.md](docs/wayrdp-Entwurf.md).
+management) is wayvnc's; the VNC side (neatvnc) is replaced by FreeRDP 3. How
+it was planned (in German, milestones M0 to M5, all done) is in
+[docs/wayrdp-Entwurf.md](docs/wayrdp-Entwurf.md); what is open is in
+[TODO](TODO).
 
 ## Status
 
-All milestones of the design are implemented and tested end to end against
-FreeRDP's clients (xfreerdp3, sdl-freerdp3) in a headless mwc. Tested by
-hand with mstsc (Windows 11 VM through Bitvise) and Remmina: mstsc takes
-RemoteFX only over the graphics pipeline, which wayrdp now speaks (the
-numbers are under "What it does"). mstsc takes the size it connects with but
-doesn't follow its window afterwards (see Size). It is tested at home until
-it runs fully stable;
-only then does it go on the server, straight on 3389 in place of xrdp and
-wayvnc.
+Runs day to day at home: mstsc (a Windows 11 VM, through Bitvise) gets the
+picture over the graphics pipeline (RemoteFX Progressive), and keyboard,
+mouse, clipboard both ways, pointer images and reconnecting work; so do
+Remmina and FreeRDP's own clients. mstsc takes the size it connects with but
+doesn't follow its window afterwards (see Size). The end-to-end tests run
+against a headless mwc (see Building and tests).
 
-| Milestone | Content | State |
-|---|---|---|
-| M0 | Fork, neatvnc out, `wv_log()`, builds against FreeRDP 3, connects to mwc | done |
-| M1 | Listener, peer, TLS, NLA, RemoteFX, flow control | done, mstsc test open |
-| M2 | Keyboard, mouse, wheel, Synchronize, Unicode | done, mstsc test open |
-| M3 | Clipboard in both directions | done, mstsc test open |
-| M4 | Size follows the client window, pointer images | done; mstsc only at connect |
-| M5 | Hardening, `pam` mode, docs | done |
+Next is the server at work, straight on 3389 in place of xrdp and wayvnc:
+[docs/upgrade-to-wayrdp.md](docs/upgrade-to-wayrdp.md).
 
 ## What it does
 
@@ -94,9 +86,12 @@ wayvnc.
   come from its pointer cache. `-r` draws the pointer into the picture
   instead, and so does wayrdp when the compositor has no cursor session.
 
-Measured at 1920×1080 on an 8-core machine: idle 0 %, a terminal with a clock
-23 % of one core at 9 fps, a full-screen terminal scrolling without pause 88 %
-of one core at 30 fps, 2.2 MB/s, 8 ms encoding per frame.
+### Measured
+
+RemoteFX as surface bits at 1920×1080 on an 8-core machine (2026-11-10,
+before the graphics pipeline): idle 0 %, a terminal with a clock 23 % of one
+core at 9 fps, a full-screen terminal scrolling without pause 88 % of one core
+at 30 fps, 2.2 MB/s, 8 ms encoding per frame.
 
 A terminal scrolling without pause at 1280×800, 30 fps, sdl-freerdp3 on the
 same machine (2026-11-11): GFX with RemoteFX Progressive 6.8 MB/s, 3.8 ms
@@ -153,8 +148,10 @@ sudo apt purge xrdp wayvnc
 ### 2. mwc
 
 `~/.config/systemd/user/mwc.service` needs `MWC_VIRTUAL_INPUT=1` (it is
-already there for wayvnc). For the size to follow the mstsc window, add to
-`~/.config/mwc/mwmrc` and restart mwc (it reads this at its start):
+already there for wayvnc). For the output to take the size the client
+connects with (and, with Remmina or xfreerdp, to follow its window), add to
+`~/.config/mwc/mwmrc` and restart mwc (it reads this at its start; the
+restart closes every window of the session):
 
 ```
 Mwm*outputManagement: true
@@ -240,7 +237,9 @@ MWC=/path/to/mwc test/stuck-client.sh         # a client that stops reading
 ```
 
 The unit tests pin the scancode table, Pause, the wheel, UTF-8/UTF-16 with
-CRLF, the size limits and the pointer conversion.
+CRLF, the size limits, the pointer conversion, the flow control (frame acks,
+timeouts, ids that wrap) and that Planar tiles come out the same with one
+codec context for all of them.
 
 `test/mwc-rdp.sh` starts mwc headless with a magenta desktop and two
 terminals, serves it with wayrdp, and checks:
@@ -276,9 +275,10 @@ and then hangs once pointer images come, and its clipboard turns text into
 `\u` escapes), `WAYRDP_NO_GFX=1 EXPECT_CODEC=RemoteFX` (the old way, no
 graphics pipeline), `WAYRDP_TEST_IGNORE_GFX_CAPS=1 EXPECT_CODEC=RemoteFX`
 (wayrdp ignores the client's capabilities, as if it announced the pipeline
-and went silent: after 3 s the client gets the old way), `WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the
-fallback; the FreeRDP clients always offer the pipeline and RemoteFX),
-`WAYRDP_WRAP="valgrind …"`.
+and went silent: after 3 s the client gets the old way),
+`WAYRDP_FORCE_PLANAR=1 EXPECT_CODEC=Planar` (the fallback; the FreeRDP
+clients always offer the pipeline and RemoteFX), `WAYRDP_WRAP="valgrind …"`.
+wayrdp warns at its start when one of these `WAYRDP_` switches is on.
 
 By hand at home, without VM or tunnel: Remmina in the box (it is in
 `distrobox.ini`), with a test server from mwc headless and wayrdp on
