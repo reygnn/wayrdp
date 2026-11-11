@@ -70,8 +70,8 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 
 * Kleinigkeiten
   - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht
-    ab): Testprozesse landen dort. distrobox stop räumt; oder die Box mit
-    init=true anlegen.
+    ab): Testprozesse landen dort. distrobox stop wayrdp-dev räumt; dabei
+    bleibt es (Entscheidung 2026-11-11, kein init=true).
   - Version: 0.1.0 ist so gewollt (Entscheidung 2026-11-10). Tag/Release nur
     auf Nachfrage.
 
