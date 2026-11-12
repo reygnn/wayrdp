@@ -118,7 +118,8 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   - Zombies in den Distroboxen (Init ist "sleep infinity" und räumt nicht
     ab): Testprozesse landen dort. distrobox stop wayrdp-dev räumt; dabei
     bleibt es (Entscheidung 2026-11-11, kein init=true).
-  - Version 0.5.3 (2026-11-11, include/version.h). Tag/Release nur auf
+  - Version 0.5.4 (2026-11-12, include/version.h), Tag v0.5.4 mit
+    GitHub-Release. Weitere Tags/Releases nur auf
     Nachfrage.
 
 * Bekannte Eigenheit von wlroots 0.19.2, geprüft am 2026-11-11 (Code und
