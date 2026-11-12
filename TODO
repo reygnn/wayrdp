@@ -74,6 +74,14 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   Nur falls es wieder wichtig wird: mstsc gegen gnome-remote-desktop in
   einer Ubuntu-VM probieren; klappt es dort, die Unterschiede im
   Verbindungsaufbau vergleichen.
+  Kleiner Versuch vorher (Idee 2026-11-12, unbelegt): Reihenfolge der
+  DVCs. Heute öffnet DisplayControl vor Graphics (peer.c ruft
+  rdp_display_check() vor rdp_gfx_check()). Versuch: DisplayControl erst
+  öffnen, wenn GFX mit CAPS_CONFIRM steht oder feststeht, dass es keins
+  gibt; etwa zehn Zeilen in peer.c/display.c, Branch fix/disp-after-gfx,
+  Test mit mstsc. Dagegen spricht: ohne GFX ging es auch nicht.
+  Geprüft und verworfen: RNS_UD_SC_DYNAMIC_DST_SUPPORTED (0x02) in den
+  Early Capability Flags ist die Sommerzeit, nicht "dynamic desktop".
 
 * Aus dem Code-Review vom 2026-11-11 (vier Agenten: Robustheit,
   Speicher, sauberer Code, Hotpath). Erledigt: Use-after-free beim Beenden
