@@ -5,13 +5,19 @@
 #   make e2e MWC=…           every end-to-end script in test/, one after another
 #   make e2e-mwc-rdp MWC=…   one of them (e2e-<script name without .sh>)
 #   make install             meson install; DESTDIR is honoured
-#   make reconfigure         meson setup --reconfigure with MESONFLAGS
+#   make uninstall           remove what make install put in place (needs BUILDDIR)
+#   make reconfigure         meson setup --reconfigure with the variables below
 #   make clean               ninja clean
 #   make distclean           remove BUILDDIR
 #
 # BUILDDIR    build directory (default: build)
-# BUILDTYPE   --buildtype for a new BUILDDIR (default: meson's own, debug)
-# MESONFLAGS  further options for meson setup, e.g. "-Dpam=disabled --sysconfdir=/etc"
+# BUILDTYPE   --buildtype for a new BUILDDIR (default: release; debug keeps asserts)
+# SYSCONFDIR  --sysconfdir for a new BUILDDIR (default: /etc, where PAM looks for
+#             pam.d/wayrdp; meson's own would be /usr/local/etc)
+# MESONFLAGS  further options for meson setup, e.g. "-Dpam=disabled"
+#
+# BUILDTYPE, SYSCONFDIR and MESONFLAGS take effect when BUILDDIR is set up; for
+# an existing one use make reconfigure.
 #
 # The variables of the test scripts (MWC, PAM_PASSWORD, CLIENT, EXPECT_CODEC,
 # WAYRDP_WRAP, …) go through as they are, on the command line or from the
@@ -19,17 +25,18 @@
 # does not fail make.
 
 BUILDDIR   ?= build
-BUILDTYPE  ?=
+BUILDTYPE  ?= release
+SYSCONFDIR ?= /etc
 MESONFLAGS ?=
 
 MESON ?= meson
 NINJA ?= ninja
 
-SETUPFLAGS = $(if $(BUILDTYPE),--buildtype=$(BUILDTYPE)) $(MESONFLAGS)
+SETUPFLAGS = --buildtype=$(BUILDTYPE) --sysconfdir=$(SYSCONFDIR) $(MESONFLAGS)
 
 E2E = mwc-rdp pam-rdp mwc-probe clipboard-shutdown stuck-client unplug-output
 
-.PHONY: all setup reconfigure test install clean distclean e2e $(addprefix e2e-,$(E2E))
+.PHONY: all setup reconfigure test install uninstall clean distclean e2e $(addprefix e2e-,$(E2E))
 
 all: setup
 	$(NINJA) -C $(BUILDDIR)
@@ -48,6 +55,12 @@ test: setup
 
 install: all
 	$(MESON) install -C $(BUILDDIR) --no-rebuild
+
+# meson's uninstall target works from BUILDDIR's install log, so it has to
+# run before make distclean.
+uninstall:
+	@[ -f $(BUILDDIR)/meson-logs/install-log.txt ] || { echo "make: nothing installed from $(BUILDDIR)" >&2; exit 1; }
+	$(NINJA) -C $(BUILDDIR) uninstall
 
 clean:
 	-[ ! -f $(BUILDDIR)/build.ninja ] || $(NINJA) -C $(BUILDDIR) clean

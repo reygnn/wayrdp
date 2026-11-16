@@ -77,15 +77,16 @@ sudo apt install --no-install-recommends build-essential meson ninja-build \
     wayland-protocols libxkbcommon-dev libpixman-1-dev libdrm-dev libpam0g-dev
 git clone https://github.com/reygnn/wayrdp.git
 cd wayrdp
-make BUILDTYPE=release MESONFLAGS=--sysconfdir=/etc
+make
 sudo make install                # /usr/local/bin/wayrdp, /etc/pam.d/wayrdp
 ```
 
-The Makefile only wraps meson and ninja (`meson setup build`, `ninja -C build`,
-`meson install`); its header lists the targets and variables. `--sysconfdir=/etc` puts
-the PAM service where PAM looks; meson would otherwise use `/usr/local/etc`. The options
-apply when `build` is set up; for an existing one, `make reconfigure` with the same
-variables. aml 1.0 is not packaged; meson fetches it as a subproject
+The Makefile only wraps meson and ninja; its header lists the targets and variables.
+It sets up `build` as a release build with `--sysconfdir=/etc`, so the PAM service
+lands where PAM looks (meson's own default would be `/usr/local/etc`). These options
+apply when `build` is set up; for an existing one, `make reconfigure`.
+`sudo make uninstall` removes what was installed; it reads `build`'s install log, so
+it has to come before `make distclean`. aml 1.0 is not packaged; meson fetches it as a subproject
 (`subprojects/aml.wrap`).
 
 ### 1a. xrdp and wayvnc out
@@ -183,14 +184,15 @@ The development box (rootless Podman and Distrobox) brings everything the tests 
 ```sh
 distrobox assemble create --replace --file distrobox.ini
 distrobox enter wayrdp-dev
-make                                    # meson setup build, ninja -C build
+make                                    # release build in build/
 make test                               # unit tests
 make e2e MWC=/path/to/mwc               # every script in test/, one after another
 make e2e-mwc-rdp MWC=/path/to/mwc       # one of them, here -a nla
 make e2e-pam-rdp MWC=/path/to/mwc PAM_PASSWORD=…   # end to end, -a pam
 ```
 
-The scripts can also be run directly, `MWC=/path/to/mwc test/mwc-rdp.sh`. Besides
+`make BUILDDIR=build-debug BUILDTYPE=debug` keeps wayrdp's asserts; the tests then take
+the same `BUILDDIR`. The scripts can also be run directly, `MWC=/path/to/mwc test/mwc-rdp.sh`. Besides
 `mwc-rdp` and `pam-rdp` there are `mwc-probe` (capture only), `clipboard-shutdown`,
 `stuck-client` and `unplug-output`. `make e2e` counts a skipped script (exit 77, such as
 `pam-rdp` without `PAM_PASSWORD`) as no failure and stops at the first one that fails. Each script's header says what it checks and

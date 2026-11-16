@@ -10,7 +10,8 @@ Build and test inside the `wayrdp-dev` distrobox (`distrobox.ini`); the host lac
 test tools. `distrobox enter wayrdp-dev -- bash -lc 'cd ~/data/C-Projects/wayrdp && ...'`.
 
 The build is meson; the Makefile only wraps it (`make`, `make test`, `make e2e MWC=…`,
-`make e2e-<script>`, `make install`, `make clean`, `make distclean`; see its header):
+`make e2e-<script>`, `make install`, `make uninstall`, `make clean`, `make distclean`;
+release with `--sysconfdir=/etc` by default; see its header):
 
 | Command | |
 |---|---|
