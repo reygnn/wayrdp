@@ -9,7 +9,8 @@ CLAUDE.md.
 Build and test inside the `wayrdp-dev` distrobox (`distrobox.ini`); the host lacks the
 test tools. `distrobox enter wayrdp-dev -- bash -lc 'cd ~/data/C-Projects/wayrdp && ...'`.
 
-The build is meson, no Makefile:
+The build is meson; the Makefile only wraps it (`make`, `make test`, `make e2e MWC=…`,
+`make e2e-<script>`, `make install`, `make clean`, `make distclean`; see its header):
 
 | Command | |
 |---|---|

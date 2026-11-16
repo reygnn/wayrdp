@@ -77,13 +77,15 @@ sudo apt install --no-install-recommends build-essential meson ninja-build \
     wayland-protocols libxkbcommon-dev libpixman-1-dev libdrm-dev libpam0g-dev
 git clone https://github.com/reygnn/wayrdp.git
 cd wayrdp
-meson setup build --buildtype=release --sysconfdir=/etc
-ninja -C build
-sudo ninja -C build install      # /usr/local/bin/wayrdp, /etc/pam.d/wayrdp
+make BUILDTYPE=release MESONFLAGS=--sysconfdir=/etc
+sudo make install                # /usr/local/bin/wayrdp, /etc/pam.d/wayrdp
 ```
 
-`--sysconfdir=/etc` puts the PAM service where PAM looks; meson would otherwise use
-`/usr/local/etc`. aml 1.0 is not packaged; meson fetches it as a subproject
+The Makefile only wraps meson and ninja (`meson setup build`, `ninja -C build`,
+`meson install`); its header lists the targets and variables. `--sysconfdir=/etc` puts
+the PAM service where PAM looks; meson would otherwise use `/usr/local/etc`. The options
+apply when `build` is set up; for an existing one, `make reconfigure` with the same
+variables. aml 1.0 is not packaged; meson fetches it as a subproject
 (`subprojects/aml.wrap`).
 
 ### 1a. xrdp and wayvnc out
@@ -181,14 +183,17 @@ The development box (rootless Podman and Distrobox) brings everything the tests 
 ```sh
 distrobox assemble create --replace --file distrobox.ini
 distrobox enter wayrdp-dev
-meson setup build && ninja -C build
-meson test -C build                     # unit tests
-MWC=/path/to/mwc test/mwc-rdp.sh        # end to end, -a nla
-MWC=/path/to/mwc PAM_PASSWORD=… test/pam-rdp.sh   # end to end, -a pam
+make                                    # meson setup build, ninja -C build
+make test                               # unit tests
+make e2e MWC=/path/to/mwc               # every script in test/, one after another
+make e2e-mwc-rdp MWC=/path/to/mwc       # one of them, here -a nla
+make e2e-pam-rdp MWC=/path/to/mwc PAM_PASSWORD=…   # end to end, -a pam
 ```
 
-Further scripts: `mwc-probe.sh` (capture only), `clipboard-shutdown.sh`,
-`stuck-client.sh`, `unplug-output.sh`. Each script's header says what it checks and
+The scripts can also be run directly, `MWC=/path/to/mwc test/mwc-rdp.sh`. Besides
+`mwc-rdp` and `pam-rdp` there are `mwc-probe` (capture only), `clipboard-shutdown`,
+`stuck-client` and `unplug-output`. `make e2e` counts a skipped script (exit 77, such as
+`pam-rdp` without `PAM_PASSWORD`) as no failure and stops at the first one that fails. Each script's header says what it checks and
 which variables pick the client, codec or a valgrind wrapper; wayrdp warns at its start
 when one of its `WAYRDP_` test switches is on. `pam-rdp.sh` needs `/etc/pam.d/wayrdp`
 and the password of the user running it.
