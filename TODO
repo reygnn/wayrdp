@@ -7,7 +7,7 @@ Stand 2026-11-11: M0 bis M5 aus docs/wayrdp-Entwurf.md und die GFX-Pipeline
 Zwischenablage in beide Richtungen mit Umlauten; Zeigerbilder und
 Synchronize am Vortag ohne GFX. Die Größe übernimmt wayrdp beim
 Verbinden; während der Sitzung meldet mstsc keine (Einschränkung von mstsc,
-siehe unten und README). Remmina und xfreerdp /dynamic-resolution passen sie
+siehe unten und CAVEATS.md). Remmina und xfreerdp /dynamic-resolution passen sie
 an, auch auf ruhigem Desktop (Fix vom 2026-11-11). Die Sperre zählt nur
 geprüfte Passwörter. Umstieg in der Firma: docs/upgrade-to-wayrdp.md.
 
@@ -20,7 +20,7 @@ Testaufbau zuhause (nicht im Repo):
   dann "New Remote Desktop" auf 127.0.0.1; oder mstsc direkt über eine
   Bitvise-C2S-Regel 127.0.0.1:13389 -> localhost:3389 (Benutzer "user").
   Ohne VM: Remmina in der Box (distrobox.ini), Server 127.0.0.1:3389.
-Automatische Tests: README unter "Building and tests" (test/mwc-rdp.sh,
+Automatische Tests: README unter "Testing", CLAUDE.md (test/mwc-rdp.sh,
 test/pam-rdp.sh, meson test). mwc dafür aus einer Kopie bauen, nicht im
 mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 
@@ -63,7 +63,7 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
   wayland-rdp-upgrade.sh (seit mwc fca2bcd, Größe korrigiert in 13e12ee).
 
 * mstsc ändert die Größe während der Sitzung nicht (2026-11-11), Stand:
-  Einschränkung von mstsc, als solche im README. Die Anfangsgröße geht.
+  Einschränkung von mstsc, als solche in CAVEATS.md. Die Anfangsgröße geht.
   Kein "monitor layout" im Fenster (Scrollbalken), auch nicht im Vollbild
   nach einem Wechsel der Windows-Auflösung (screen mode id:i:2, dynamic
   resolution:i:1), über Bitvise wie direkt, mit und ohne GFX, mit den
