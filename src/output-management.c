@@ -44,11 +44,10 @@ static uint32_t last_config_serial;
 extern struct wayland* wayland;
 
 /* The last size asked for: a cancelled configuration (the output changed
- * in the meantime) is sent again once with the next serial. */
+ * in the meantime) is sent again, once. */
 static struct {
 	char* output;
 	uint16_t width, height;
-	bool again;
 	/* Sent again already: once only. */
 	bool retried;
 } request;
@@ -210,11 +209,23 @@ static void output_manager_config_failed(void* data,
 static void output_manager_config_cancelled(void* data,
 		struct zwlr_output_configuration_v1* config)
 {
-	/* Outdated: the outputs changed before it came. The next done brings
-	 * the serial to ask again with. */
-	wv_log(WV_LOG_DEBUG, "Output configuration cancelled; asking again");
+	/* Outdated: the outputs changed before it came. The compositor sent
+	 * the done with the new serial before this (wlroots does), so it can
+	 * be asked again at once. */
 	zwlr_output_configuration_v1_destroy(config);
-	request.again = request.output != NULL && !request.retried;
+	if (!request.output || request.retried) {
+		wv_log(WV_LOG_WARNING, "The output size %ux%u was cancelled",
+				request.width, request.height);
+		return;
+	}
+	wv_log(WV_LOG_DEBUG, "Output configuration cancelled; asking again");
+	struct output* output = wayland
+		? output_find_by_name(&wayland->outputs, request.output) : NULL;
+	if (!output || !wlr_output_manager_resize_output(output,
+				request.width, request.height))
+		wv_log(WV_LOG_WARNING, "The output size %ux%u can't be asked for again",
+				request.width, request.height);
+	request.retried = true;
 }
 
 struct zwlr_output_configuration_v1_listener wlr_output_config_listener = {
@@ -229,17 +240,6 @@ static void output_manager_done(void* data,
 		uint32_t serial)
 {
 	last_config_serial = serial;
-
-	if (request.again) {
-		request.again = false;
-		struct output* output = wayland
-			? output_find_by_name(&wayland->outputs, request.output) : NULL;
-		if (!output || !wlr_output_manager_resize_output(output,
-					request.width, request.height))
-			wv_log(WV_LOG_WARNING, "The output size %ux%u can't be asked for again",
-					request.width, request.height);
-		request.retried = true;
-	}
 	wv_trace("Got new serial: %u", serial);
 }
 
@@ -309,7 +309,6 @@ void wlr_output_manager_destroy(void)
 	last_config_serial = 0;
 	free(request.output);
 	request.output = NULL;
-	request.again = false;
 }
 
 struct zwlr_output_configuration_v1* wlr_output_manager_start_config(void)
