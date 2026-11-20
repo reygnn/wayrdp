@@ -111,6 +111,7 @@ struct wayrdp {
 	/* FAILED in a row: one is normal (a resize), many say why nothing
 	 * comes. */
 	int capture_failures;
+	int cursor_failures;
 	/* The pointer capture's, apart: its restart mustn't come from inside
 	 * the capture that failed (its constraints_done). */
 	struct aml_timer* cursor_retry_timer;
@@ -412,6 +413,8 @@ static void on_cursor_done(enum screencopy_result result,
 		wv_log(WV_LOG_INFO, "The compositor ended the pointer capture");
 		return;
 	case SCREENCOPY_FAILED:
+		if (++self->cursor_failures == 10)
+			wv_log(WV_LOG_WARNING, "The pointer capture fails again and again; still trying");
 		/* Later, from the loop: started from here, the restart would
 		 * be undone by the capture that is still on its way out. */
 		if (self->capturing && !self->cursor_retry_timer) {
@@ -421,6 +424,9 @@ static void on_cursor_done(enum screencopy_result result,
 		}
 		return;
 	case SCREENCOPY_DONE:
+		if (self->cursor_failures >= 10)
+			wv_log(WV_LOG_INFO, "The pointer capture works again");
+		self->cursor_failures = 0;
 		break;
 	}
 

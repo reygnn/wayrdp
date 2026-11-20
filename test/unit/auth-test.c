@@ -67,6 +67,9 @@ static int test_write_fails(void)
  * new pair can't go there, and the certificate it didn't write stays. */
 static int test_keeps_unwritten(void)
 {
+	/* Root writes a 0400 file anyway. */
+	if (geteuid() == 0)
+		return 0;
 	FILE* f = fopen(cert, "w");
 	ASSERT_TRUE(f != NULL);
 	fputs("mine\n", f);

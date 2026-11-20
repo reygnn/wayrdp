@@ -40,11 +40,16 @@ int pointer_init(struct pointer* self)
 
 void pointer_destroy(struct pointer* self)
 {
+	/* None without a seat (init_pointer). */
+	if (!self->pointer)
+		return;
 	zwlr_virtual_pointer_v1_destroy(self->pointer);
 }
 
 void pointer_motion(struct pointer* self, double x, double y)
 {
+	if (!self->pointer)
+		return;
 	if (x == self->current_x && y == self->current_y)
 		return;
 
@@ -62,6 +67,8 @@ void pointer_motion(struct pointer* self, double x, double y)
 
 void pointer_button(struct pointer* self, uint32_t code, bool is_pressed)
 {
+	if (!self->pointer)
+		return;
 	zwlr_virtual_pointer_v1_button(self->pointer, gettime_ms(), code,
 			is_pressed ? WL_POINTER_BUTTON_STATE_PRESSED
 			           : WL_POINTER_BUTTON_STATE_RELEASED);
@@ -70,6 +77,8 @@ void pointer_button(struct pointer* self, uint32_t code, bool is_pressed)
 void pointer_axis(struct pointer* self, enum pointer_axis axis,
 		int32_t value120)
 {
+	if (!self->pointer)
+		return;
 	uint32_t t = gettime_ms();
 	uint32_t wl_axis = axis == POINTER_AXIS_VERTICAL
 		? WL_POINTER_AXIS_VERTICAL_SCROLL
@@ -93,5 +102,7 @@ void pointer_axis(struct pointer* self, enum pointer_axis axis,
 
 void pointer_frame(struct pointer* self)
 {
+	if (!self->pointer)
+		return;
 	zwlr_virtual_pointer_v1_frame(self->pointer);
 }

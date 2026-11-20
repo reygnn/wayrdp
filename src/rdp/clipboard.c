@@ -245,9 +245,6 @@ static UINT on_client_format_list(CliprdrServerContext* context,
 	bool first = !self->clip_ready;
 	self->clip_ready = true;
 	self->client_has_text = has_text;
-	wv_log(WV_LOG_DEBUG, "Client clipboard: %s (%u formats)",
-			has_text ? "text" : "no text", list->numFormats);
-
 	if (self->server->active == self && handler(self)) {
 		if (has_text)
 			handler(self)->offer(userdata(self));
@@ -258,6 +255,9 @@ static UINT on_client_format_list(CliprdrServerContext* context,
 	/* The client's list comes first, then the session's. */
 	if (first && !has_text)
 		rdp_clipboard_announce(self);
+	/* Last, so what it set off is in the log before it (tests wait on it). */
+	wv_log(WV_LOG_DEBUG, "Client clipboard: %s (%u formats)",
+			has_text ? "text" : "no text", list->numFormats);
 	return rc;
 }
 
