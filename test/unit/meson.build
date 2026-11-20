@@ -18,8 +18,6 @@ units = {
 	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
 	'intset': [['../../src/intset.c'], inc, []],
 	'log': [['../../src/log.c'], inc, []],
-	'deadline': [['../../src/rdp/deadline.c'], [inc, src_inc],
-		[dependency('threads')]],
 	'buffer': [['../../src/buffer.c', '../../src/shm.c', '../../src/log.c',
 		'../../src/pixels.c', '../../src/util.c', '../../src/strlcpy.c'],
 		[inc, root_inc], [wayland_client, client_protos, pixman, drm]],

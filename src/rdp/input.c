@@ -53,6 +53,9 @@ static struct rdp_peer* peer_from_input(rdpInput* input)
 static const struct rdp_input_handler* handler_for(struct rdp_peer* self)
 {
 	struct rdp_server* server = self->server;
+	/* Before the main loop has the connection: nothing of the server. */
+	if (atomic_load(&self->on_thread))
+		return NULL;
 	if (server->active != self || !self->activated || self->closing)
 		return NULL;
 	return server->config.input;

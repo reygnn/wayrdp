@@ -1,17 +1,18 @@
 #!/bin/bash
-# A client that stops in the middle of the TLS handshake. FreeRDP accepts
-# TLS (and NLA) blocking, without a timeout, on wayrdp's main loop; the
-# login deadline (src/rdp/deadline.c) must end it, or everything stands:
-# the session, new logins and the login timer.
+# Clients that stop in the middle of the TLS handshake. FreeRDP accepts
+# TLS (and NLA) blocking, without a timeout; each connection does that on
+# a thread of its own until it is connected, so the main loop goes on:
+# the session, new logins, the login timer.
 #
 #  - mwc "A" headless, wayrdp -a nla on it, WAYRDP_LOGIN_TIMEOUT=3
 #  - test/x224-hold.py sends the X.224 request, reads the answer and then
-#    nothing; xfreerdp3 +auth-only must still log on, within 10 s, and the
-#    held connection must be closed for that, as stuck in the handshake;
-#    a session that logged on (sdl-freerdp3) stays past the timeout
-#  - the same for -a pam (TLS only): the held connection is closed after
-#    the timeout and wayrdp answers a new one; a client that goes on its
-#    own during its password check isn't taken for a stuck one
+#    nothing: while one is held, and while three are, xfreerdp3 +auth-only
+#    logs on at once (in under 2 s, before the timeout); without a login
+#    the held one is closed after the timeout, as still connecting; a
+#    session that logged on (sdl-freerdp3) stays past the timeout
+#  - -a pam (TLS only): wayrdp answers a new connection while one is held,
+#    and closes the held one after the timeout; a client that goes on its
+#    own during its password check isn't taken for one still connecting
 #
 #   test/stuck-handshake.sh [build/wayrdp]
 set -u
@@ -69,13 +70,26 @@ start_wayrdp() {
 	done
 	fail "wayrdp doesn't listen on $port"
 }
-# hold <port> <protocols>: a connection stuck in the handshake, held 60 s
+# hold <port> <protocols> <name>: a connection stuck in the handshake,
+# held 60 s, its process in held_<name>
 hold() {
-	coproc HOLDER { python3 -I "$HOLD" "$1" 60 "$2"; }
-	pids+=($HOLDER_PID)
-	local answer
-	read -r -t 10 answer <&"${HOLDER[0]}"
-	[ "$answer" = held ] || fail "the held connection got no answer"
+	python3 -I "$HOLD" "$1" 60 "$2" >"$dir/hold-$3.out" 2>&1 &
+	pids+=($!)
+	eval "held_$3=$!"
+	for ((i = 0; i < 100; i++)); do
+		grep -q held "$dir/hold-$3.out" && return 0
+		sleep 0.1
+	done
+	fail "the held connection $3 got no answer"
+}
+# login_now <port> <what>: xfreerdp3 +auth-only logs on in under 2 s
+login_now() {
+	local t0=$(date +%s%N)
+	timeout 10 xfreerdp3 /v:127.0.0.1:$1 /u:$USER_NAME /p:"$PASSWORD" /cert:ignore \
+		+auth-only >"$dir/auth.log" 2>&1 || fail "no login $2"
+	local ms=$((($(date +%s%N) - t0) / 1000000))
+	[ "$ms" -lt 2000 ] || fail "the login $2 took $ms ms: the main loop waited"
+	echo "ok: a login gets in after $ms ms $2"
 }
 # wait_log <pattern> <log> <what>
 wait_log() {
@@ -89,18 +103,22 @@ wait_log() {
 # ---- -a nla -----------------------------------------------------------------
 PORT=$((20000 + RANDOM % 10000))
 start_wayrdp "$dir/wayrdp.log" "$PORT"
-hold "$PORT" 3
-start=$(date +%s)
-timeout 10 xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:"$PASSWORD" /cert:ignore \
-	+auth-only >"$dir/auth.log" 2>&1 \
-	|| fail "no login while a connection is stuck in the handshake"
-echo "ok: a login gets in after $(($(date +%s) - start)) s while a connection is stuck in the handshake"
-wait_log "stuck in the handshake" "$dir/wayrdp.log" "the stuck connection wasn't closed as such"
-echo "ok: the stuck connection is closed after the login timeout"
-kill "$HOLDER_PID" 2>/dev/null; wait "$HOLDER_PID" 2>/dev/null
+# A login while one is held, and while three are: it gets in at once and
+# replaces them, as any login replaces the connections before it.
+hold "$PORT" 3 one
+login_now "$PORT" "while a connection is stuck in the handshake"
+hold "$PORT" 3 a; hold "$PORT" 3 b; hold "$PORT" 3 c
+login_now "$PORT" "while three connections are stuck"
+kill "$held_one" "$held_a" "$held_b" "$held_c" 2>/dev/null
+wait "$held_one" "$held_a" "$held_b" "$held_c" 2>/dev/null
+# Without a login it is the login timeout that closes one.
+hold "$PORT" 3 late
+wait_log "didn't log on in time (still connecting)" "$dir/wayrdp.log" \
+	"the stuck connection wasn't closed after the timeout"
+echo "ok: a stuck connection is closed after the login timeout"
+kill "$held_late" 2>/dev/null; wait "$held_late" 2>/dev/null
 
-# A session that logged on outlives its deadline: once logged on, nothing
-# shuts its socket down.
+# A session that logged on stays past the login timeout.
 n_active=$(grep -c "active, " "$dir/wayrdp.log")
 XDG_RUNTIME_DIR=$dir/run WAYLAND_DISPLAY=wayland-0 sdl-freerdp3 /v:127.0.0.1:$PORT \
 	/u:$USER_NAME /p:"$PASSWORD" /cert:ignore /size:1024x768 /log-level:OFF \
@@ -114,11 +132,11 @@ done
 [ "$(grep -c "active, " "$dir/wayrdp.log")" -gt "$n_active" ] || fail "the NLA session never became active"
 # Twice the login timeout, watching that it stays.
 for ((i = 0; i < 60; i++)); do
-	grep -q "disconnected after\|logged on too late" "$dir/wayrdp.log" && break
+	grep -q "disconnected after" "$dir/wayrdp.log" && break
 	kill -0 "$session" 2>/dev/null || break
 	sleep 0.1
 done
-grep -q "disconnected after\|logged on too late" "$dir/wayrdp.log" \
+grep -q "disconnected after" "$dir/wayrdp.log" \
 	&& fail "the NLA session was cut after the login timeout"
 kill -0 "$session" 2>/dev/null || fail "the NLA client is gone"
 echo "ok: an NLA session stays past the login timeout"
@@ -127,15 +145,20 @@ kill "$session" 2>/dev/null; wait "$session" 2>/dev/null
 # ---- -a pam ------------------------------------------------------------------
 PORT2=$((PORT + 1))
 start_wayrdp "$dir/wayrdp-pam.log" "$PORT2" -a pam
-hold "$PORT2" 1
-wait_log "stuck in the handshake" "$dir/wayrdp-pam.log" "-a pam: the stuck connection wasn't closed"
-python3 -I "$HOLD" "$PORT2" 0 1 >/dev/null || fail "-a pam: wayrdp doesn't answer after the stuck connection"
-echo "ok: -a pam: the stuck connection is closed, wayrdp answers again"
+hold "$PORT2" 1 pam
+# Answered while the other is held, not only once it is gone.
+python3 -I "$HOLD" "$PORT2" 0 1 >/dev/null || fail "-a pam: wayrdp doesn't answer while a connection is stuck"
+grep -q "still connecting" "$dir/wayrdp-pam.log" \
+	&& fail "-a pam: the stuck connection was closed before the check, the test needs it held"
+echo "ok: -a pam: wayrdp answers while a connection is stuck"
+wait_log "didn't log on in time (still connecting)" "$dir/wayrdp-pam.log" \
+	"-a pam: the stuck connection wasn't closed after the timeout"
+echo "ok: -a pam: the stuck connection is closed after the timeout"
+kill "$held_pam" 2>/dev/null; wait "$held_pam" 2>/dev/null
 
 # A client that goes on its own before it logged on (closed while its
-# password is checked) is no stuck handshake, though FreeRDP sets its
-# abort event then too.
-n_stuck=$(grep -c "stuck in the handshake" "$dir/wayrdp-pam.log")
+# password is checked) isn't taken for one still connecting.
+n_stuck=$(grep -c "still connecting" "$dir/wayrdp-pam.log")
 n_sent=$(grep -c "client wants" "$dir/wayrdp-pam.log")
 n_closed=$(grep -c "Connection from 127.0.0.1 closed" "$dir/wayrdp-pam.log")
 XDG_RUNTIME_DIR=$dir/run WAYLAND_DISPLAY=wayland-0 sdl-freerdp3 /v:127.0.0.1:$PORT2 \
@@ -148,14 +171,13 @@ for ((i = 0; i < 100; i++)); do
 	sleep 0.1
 done
 kill -TERM "$client"
-# The stuck message would come in the same call, before the close.
 for ((i = 0; i < 100; i++)); do
 	[ "$(grep -c "Connection from 127.0.0.1 closed" "$dir/wayrdp-pam.log")" -gt "$n_closed" ] && break
 	sleep 0.1
 done
 [ "$(grep -c "Connection from 127.0.0.1 closed" "$dir/wayrdp-pam.log")" -gt "$n_closed" ] \
 	|| fail "-a pam: the client that went wasn't closed"
-[ "$(grep -c "stuck in the handshake" "$dir/wayrdp-pam.log")" = "$n_stuck" ] \
-	|| fail "-a pam: a client that went on its own was logged as stuck in the handshake"
-echo "ok: -a pam: a client that goes on its own isn't taken for a stuck handshake"
+[ "$(grep -c "still connecting" "$dir/wayrdp-pam.log")" = "$n_stuck" ] \
+	|| fail "-a pam: a client that went on its own was logged as still connecting"
+echo "ok: -a pam: a client that goes on its own isn't taken for one still connecting"
 echo "PASS"

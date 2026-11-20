@@ -108,7 +108,6 @@ sources = [
 	'src/rdp/cursor.c',
 	'src/rdp/gfx.c',
 	'src/rdp/flow.c',
-	'src/rdp/deadline.c',
 	'src/rdp/pam.c',
 ]
 

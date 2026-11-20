@@ -23,7 +23,7 @@ release with `--sysconfdir=/etc` by default; see its header):
 | `test/mwc-probe.sh` | capture from mwc, no client |
 | `test/clipboard-shutdown.sh` | exit with a clipboard read waiting, under valgrind |
 | `test/stuck-client.sh` | a client that stops reading |
-| `test/stuck-handshake.sh` | a client that stops in the TLS handshake, `-a nla` and `-a pam` |
+| `test/stuck-handshake.sh` | clients that stop in the TLS handshake (each connection has its own thread until it is connected), `-a nla` and `-a pam` |
 | `test/unplug-output.sh` | the captured output is unplugged |
 
 Each script's header lists what it checks and its variables (`CLIENT`, `EXPECT_CODEC`,

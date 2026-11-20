@@ -105,14 +105,9 @@ passwd $USER dort), mit read -rs eingelesen und exportiert.
   - Robustheit (alle nur bei böswilligen oder kaputten Clients):
     - Vier stumme TCP-Verbindungen sperren den Login bis zu 30 s
       (MAX_PENDING): kürzere Frist vor TLS/NLA oder die älteste verdrängen.
-    - Eine Verbindung, die im TLS-Handshake (oder in NLA) stehen bleibt,
-      hält den Hauptloop bis zur Login-Frist an (FreeRDP nimmt beides
-      blockierend an): Bild, Eingabe und neue Logins stehen bis zu 30 s.
-      src/rdp/deadline.c beendet das dann (shutdown des Sockets, Abort-Event),
-      test/stuck-handshake.sh. Besser: jeder Peer bis zum Login in einem
-      eigenen Thread, wie FreeRDPs Beispielserver; dann steht nie etwas.
-    - -a pam: PAM läuft im selben Worker wie der Encoder; falsche
-      Passwörter (pam_faildelay) lassen das Bild sekundenlang stehen.
+    - -a pam: PAM läuft im selben Worker wie der Encoder. Die Prüfung
+      selbst ist kurz (PAMs Verzögerung ist aus, die feste Wartezeit läuft
+      im Hauptloop); ein langsames Modul würde das Bild aufhalten.
       Eigener Worker für PAM.
     - Leseanfragen der Zwischenablage vom Client sind nicht begrenzt (je ein
       Pipe und Timer): eine offene pro Client, weitere mit FAIL beantworten.

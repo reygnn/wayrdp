@@ -14,6 +14,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,9 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
+#include <pthread.h>
 #include <aml.h>
 #include <freerdp/freerdp.h>
 #include <freerdp/peer.h>
@@ -35,7 +38,6 @@
 #include <winpr/sspi.h>
 
 #include "rdp/internal.h"
-#include "rdp/deadline.h"
 #include "rdp/pam.h"
 #include "log.h"
 #include "time-util.h"
@@ -92,28 +94,14 @@ static void on_login_timeout(struct aml_timer* timer)
 	struct rdp_peer* self = aml_get_userdata(timer);
 	if (self->logged_on || self->closing)
 		return;
-	wv_log(WV_LOG_WARNING, "%s didn't log on in time", self->client->hostname);
+	/* Still on its thread: in the connection sequence, maybe stuck in
+	 * TLS or NLA, which FreeRDP accepts blocking; destroy ends that. */
+	wv_log(WV_LOG_WARNING, "%s didn't log on in time%s", self->client->hostname,
+			self->thread_running ? " (still connecting)" : "");
 	rdp_peer_close(self);
 }
 
-/* On the deadline's thread: both calls are safe from there. */
-static void on_login_deadline(void* arg)
-{
-	struct rdp_peer* self = arg;
-	shutdown(self->login_abort.sock, SHUT_RDWR);
-	SetEvent(self->login_abort.event);
-}
-
-/* Logged on: the deadline goes. False if it had run out already, and the
- * abort event is set: too late, the connection can't stay. */
-static bool stop_login_deadline(struct rdp_peer* self)
-{
-	bool fired = rdp_deadline_stop(self->login_deadline);
-	self->login_deadline = NULL;
-	if (fired)
-		wv_log(WV_LOG_WARNING, "%s logged on too late", self->client->hostname);
-	return !fired;
-}
+static void stop_thread(struct rdp_peer* self);
 
 static void on_close_idle(struct aml_idle* idle)
 {
@@ -135,9 +123,12 @@ void rdp_peer_close(struct rdp_peer* self)
 
 void rdp_peer_destroy(struct rdp_peer* self)
 {
-	/* Before the context and its abort event go. */
-	rdp_deadline_stop(self->login_deadline);
-	self->login_deadline = NULL;
+	/* Before anything it may use goes: the context, the socket. */
+	stop_thread(self);
+	if (self->thread_done_fd >= 0) {
+		close(self->thread_done_fd);
+		self->thread_done_fd = -1;
+	}
 	stop_handlers(self);
 	if (self->login_timer) {
 		aml_stop(aml_get_default(), self->login_timer);
@@ -182,11 +173,6 @@ static void on_peer_event(struct aml_handler* handler)
 		return;
 
 	if (!self->client->CheckFileDescriptor(self->client)) {
-		/* Not the abort event: FreeRDP sets it too, when the client
-		 * disconnects on its own. */
-		if (!self->logged_on && rdp_deadline_fired(self->login_deadline))
-			wv_log(WV_LOG_WARNING, "%s didn't log on in time (stuck in the handshake)",
-					self->client->hostname);
 		rdp_peer_close(self);
 		return;
 	}
@@ -278,6 +264,14 @@ static void set_tcp_timeouts(int fd)
 /* After NLA. NTLM checked the password against the SAM file, which holds
  * only the user wayrdp runs as; the name the client sent along (in the
  * settings, from TSCredentials) must be that user too. */
+/* Main loop: the logon (NLA) counts for the server, which may replace
+ * the session with it. */
+static void complete_logon(struct rdp_peer* self)
+{
+	self->logged_on = true;
+	rdp_server_peer_logged_on(self->server, self);
+}
+
 static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identity,
 		BOOL automatic)
 {
@@ -302,11 +296,13 @@ static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identi
 		return FALSE;
 	}
 
-	if (!stop_login_deadline(self))
-		return FALSE;
 	wv_log(WV_LOG_INFO, "%s: logged on as %s", client->hostname, user);
-	self->logged_on = true;
-	rdp_server_peer_logged_on(self->server, self);
+	/* NLA comes on the connection's thread: the server learns of the
+	 * logon once the main loop has the connection (on_thread_done). */
+	if (atomic_load(&self->on_thread))
+		self->logon_waiting = true;
+	else
+		complete_logon(self);
 	return TRUE;
 }
 
@@ -438,8 +434,6 @@ static void answer_pam(struct pam_job* job)
 		if (job->result != RDP_PAM_OK) {
 			log_refusal(self->client->hostname, job);
 			rdp_peer_close(self);
-		} else if (!stop_login_deadline(self)) {
-			rdp_peer_close(self);
 		} else {
 			wv_log(WV_LOG_INFO, "%s: logged on as %s (PAM)",
 					self->client->hostname, job->user);
@@ -555,7 +549,9 @@ static BOOL on_post_connect(freerdp_peer* client)
 			freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight),
 			freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth));
 
-	if (self->server->config.auth == RDP_AUTH_PAM && !self->logged_on
+	/* On the thread: PAM starts on the main loop (on_thread_done). */
+	if (!atomic_load(&self->on_thread)
+			&& self->server->config.auth == RDP_AUTH_PAM && !self->logged_on
 			&& !self->pam_pending)
 		return start_pam(self);
 	return TRUE;
@@ -585,6 +581,11 @@ enum rdp_codec rdp_peer_codec(const struct rdp_peer* self)
 static BOOL on_activate(freerdp_peer* client)
 {
 	struct rdp_peer* self = peer_from_context(client->context);
+	/* In the same read as PostConnect, still on the thread. */
+	if (atomic_load(&self->on_thread)) {
+		self->activate_waiting = true;
+		return TRUE;
+	}
 	if (!self->logged_on) {
 		/* The password is still being checked. */
 		if (self->pam_pending) {
@@ -710,6 +711,8 @@ static BOOL on_refresh_rect(rdpContext* context, BYTE count,
 		const RECTANGLE_16* areas)
 {
 	struct rdp_peer* self = peer_from_context(context);
+	if (atomic_load(&self->on_thread))
+		return TRUE;
 	if (self->server->active == self)
 		rdp_server_refresh(self->server, areas, count);
 	return TRUE;
@@ -719,6 +722,8 @@ static BOOL on_suppress_output(rdpContext* context, BYTE allow,
 		const RECTANGLE_16* area)
 {
 	struct rdp_peer* self = peer_from_context(context);
+	if (atomic_load(&self->on_thread))
+		return TRUE;
 	self->suppressed = !allow;
 	wv_log(WV_LOG_DEBUG, "Client %s output", allow ? "resumes" : "suppresses");
 	if (self->server->active != self)
@@ -733,6 +738,8 @@ static BOOL on_suppress_output(rdpContext* context, BYTE allow,
 static BOOL on_frame_ack(rdpContext* context, UINT32 frame_id)
 {
 	struct rdp_peer* self = peer_from_context(context);
+	if (atomic_load(&self->on_thread))
+		return TRUE;
 	if (!rdp_flow_ack(&self->flow, frame_id))
 		wv_log(WV_LOG_DEBUG, "%s: ack for frame %u ignored (sent %u)",
 				self->client->hostname, frame_id, self->flow.sent);
@@ -837,6 +844,153 @@ static int watch_handle(struct rdp_peer* self, HANDLE handle,
 	return 1;
 }
 
+/* ---- the connection's thread, until it is connected ---- */
+
+static void* peer_thread(void* data)
+{
+	struct rdp_peer* self = data;
+	freerdp_peer* client = self->client;
+	struct rdp_peer_context* ctx = (struct rdp_peer_context*)client->context;
+	bool ok = false;
+
+	while (!atomic_load(&self->stop_thread)) {
+		HANDLE handles[RDP_MAX_PEER_HANDLES + 2];
+		DWORD n = client->GetEventHandles(client, handles,
+				RDP_MAX_PEER_HANDLES);
+		if (n == 0)
+			break;
+		handles[n++] = WTSVirtualChannelManagerGetEventHandle(ctx->vcm);
+		/* Set by stop_thread, and by FreeRDP when the client goes. */
+		handles[n++] = self->abort_event;
+		if (WaitForMultipleObjects(n, handles, FALSE, INFINITE) == WAIT_FAILED)
+			break;
+		if (atomic_load(&self->stop_thread)
+				|| WaitForSingleObject(self->abort_event, 0) == WAIT_OBJECT_0)
+			break;
+		if (!client->CheckFileDescriptor(client))
+			break;
+		/* No drdynvc before the main loop has the connection. */
+		if (!WTSVirtualChannelManagerCheckFileDescriptorEx(ctx->vcm, FALSE))
+			break;
+		if (self->connected) {
+			ok = true;
+			break;
+		}
+	}
+
+	self->thread_ok = ok;
+	uint64_t one = 1;
+	while (write(self->thread_done_fd, &one, sizeof(one)) < 0 && errno == EINTR)
+		;
+	return NULL;
+}
+
+/* Joins the thread; the main loop has the connection from here on. */
+static void join_thread(struct rdp_peer* self)
+{
+	if (!self->thread_running)
+		return;
+	pthread_join(self->thread, NULL);
+	self->thread_running = false;
+	atomic_store(&self->on_thread, false);
+	if (self->thread_handler) {
+		aml_stop(aml_get_default(), self->thread_handler);
+		aml_unref(self->thread_handler);
+		self->thread_handler = NULL;
+	}
+}
+
+/* Main loop: the thread is through. Connected, the connection is now
+ * watched here, and what came on the thread is done: the logon (NLA),
+ * the password check (PAM), the activation. */
+static void on_thread_done(struct aml_handler* handler)
+{
+	struct rdp_peer* self = aml_get_userdata(handler);
+	uint64_t n;
+	if (read(self->thread_done_fd, &n, sizeof(n)) < 0 && errno == EAGAIN)
+		return;
+	join_thread(self);
+	if (self->closing)
+		return;
+
+	if (!self->thread_ok) {
+		rdp_peer_close(self);
+		return;
+	}
+
+	freerdp_peer* client = self->client;
+	HANDLE handles[RDP_MAX_PEER_HANDLES];
+	DWORD count = client->GetEventHandles(client, handles,
+			RDP_MAX_PEER_HANDLES);
+	for (DWORD i = 0; i < count; ++i) {
+		struct aml_handler* h = NULL;
+		int rc = watch_handle(self, handles[i], &h);
+		if (rc < 0) {
+			rdp_peer_close(self);
+			return;
+		}
+		if (rc > 0)
+			self->handlers[self->n_handlers++] = h;
+	}
+	struct rdp_peer_context* ctx = (struct rdp_peer_context*)client->context;
+	if (self->n_handlers == 0 || watch_handle(self,
+				WTSVirtualChannelManagerGetEventHandle(ctx->vcm),
+				&self->vcm_handler) < 0) {
+		rdp_peer_close(self);
+		return;
+	}
+
+	if (self->logon_waiting) {
+		self->logon_waiting = false;
+		complete_logon(self);
+	}
+	if (self->server->config.auth == RDP_AUTH_PAM && !self->logged_on
+			&& !self->pam_pending && !start_pam(self)) {
+		rdp_peer_close(self);
+		return;
+	}
+	if (self->activate_waiting && self->logged_on) {
+		self->activate_waiting = false;
+		if (!activate(self)) {
+			rdp_peer_close(self);
+			return;
+		}
+	}
+	/* What FreeRDP already read on the thread and holds. */
+	on_peer_event(self->handlers[0]);
+}
+
+static bool start_thread(struct rdp_peer* self)
+{
+	self->thread_done_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+	if (self->thread_done_fd < 0)
+		return false;
+	self->thread_handler = aml_handler_new(self->thread_done_fd,
+			on_thread_done, self, NULL);
+	if (!self->thread_handler
+			|| aml_start(aml_get_default(), self->thread_handler) < 0)
+		return false;
+	atomic_store(&self->on_thread, true);
+	if (pthread_create(&self->thread, NULL, peer_thread, self) != 0) {
+		atomic_store(&self->on_thread, false);
+		return false;
+	}
+	self->thread_running = true;
+	return true;
+}
+
+/* Ends a thread still running: whatever it waits for gives up. */
+static void stop_thread(struct rdp_peer* self)
+{
+	if (!self->thread_running)
+		return;
+	atomic_store(&self->stop_thread, true);
+	if (self->sock >= 0)
+		shutdown(self->sock, SHUT_RDWR);
+	SetEvent(self->abort_event);
+	join_thread(self);
+}
+
 struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 {
 	struct rdp_peer* self = calloc(1, sizeof(*self));
@@ -846,6 +1000,7 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	self->client = client;
 	self->serial = server->next_serial++;
 	self->sock = -1;
+	self->thread_done_fd = -1;
 
 	/* FreeRDP takes the socket over in freerdp_peer_context_new(). */
 	if (client->sockfd >= 0) {
@@ -881,43 +1036,29 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	if (!client->Initialize(client))
 		goto failure;
 
-	HANDLE handles[RDP_MAX_PEER_HANDLES];
-	DWORD n = client->GetEventHandles(client, handles,
-			RDP_MAX_PEER_HANDLES);
-	for (DWORD i = 0; i < n; ++i) {
-		struct aml_handler* handler = NULL;
-		int rc = watch_handle(self, handles[i], &handler);
-		if (rc < 0)
-			goto failure;
-		if (rc > 0)
-			self->handlers[self->n_handlers++] = handler;
-	}
-	if (self->n_handlers == 0)
-		goto failure;
-
-	struct rdp_peer_context* ctx = (struct rdp_peer_context*)client->context;
-	if (watch_handle(self, WTSVirtualChannelManagerGetEventHandle(ctx->vcm),
-				&self->vcm_handler) < 0)
-		goto failure;
-
 	self->login_timer = aml_timer_new(login_timeout_us(server), on_login_timeout,
 			self, NULL);
 	if (self->login_timer)
 		aml_start(aml_get_default(), self->login_timer);
-	/* Set before the thread starts, read only by it; the socket stays
-	 * open until the deadline is stopped (rdp_peer_destroy). */
-	self->login_abort.event = freerdp_abort_event(client->context);
-	self->login_abort.sock = self->sock;
-	self->login_deadline = rdp_deadline_start(login_timeout_us(server),
-			on_login_deadline, self);
-	if (!self->login_deadline)
-		wv_log(WV_LOG_WARNING, "%s: no login deadline thread", client->hostname);
+	self->abort_event = freerdp_abort_event(client->context);
+	if (!start_thread(self))
+		goto failure;
 
 	LIST_INSERT_HEAD(&server->peers, self, link);
 	wv_log(WV_LOG_INFO, "Connection from %s", client->hostname);
 	return self;
 
 failure:
+	if (self->login_timer) {
+		aml_stop(aml_get_default(), self->login_timer);
+		aml_unref(self->login_timer);
+	}
+	if (self->thread_handler) {
+		aml_stop(aml_get_default(), self->thread_handler);
+		aml_unref(self->thread_handler);
+	}
+	if (self->thread_done_fd >= 0)
+		close(self->thread_done_fd);
 	rdp_clipboard_close(self);
 	rdp_display_close(self);
 	rdp_gfx_close(self);

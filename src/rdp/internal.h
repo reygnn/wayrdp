@@ -44,6 +44,7 @@
 #include <freerdp/server/rdpgfx.h>
 #include <freerdp/server/disp.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "sys/queue.h"
 #include "rdp/server.h"
@@ -59,13 +60,31 @@ struct wv_buffer;
 
 #define RDP_MAX_PEER_HANDLES 8
 
-struct rdp_deadline;
-
 struct rdp_peer {
 	LIST_ENTRY(rdp_peer) link;
 	struct rdp_server* server;
 	freerdp_peer* client;
 	uint64_t serial;
+
+	/* Until it is connected (PostConnect) the connection runs on a thread
+	 * of its own, as FreeRDP accepts TLS and NLA blocking: a client that
+	 * stops there holds only its thread. The callbacks on it touch no
+	 * state of the server; what they bring is done once the main loop has
+	 * taken the connection over (on_thread_done). */
+	pthread_t thread;
+	/* Main loop only: started and not joined yet. */
+	bool thread_running;
+	/* Callbacks come on the thread. */
+	atomic_bool on_thread;
+	/* The main loop wants the thread to end (destroy). */
+	atomic_bool stop_thread;
+	/* The thread is through: written there, watched here. */
+	int thread_done_fd;
+	struct aml_handler* thread_handler;
+	/* Written by the thread before it signals, read after the join. */
+	bool thread_ok;
+	/* NLA logged on, on the thread: done on the main loop. */
+	bool logon_waiting;
 
 	struct aml_handler* handlers[RDP_MAX_PEER_HANDLES];
 	int n_handlers;
@@ -91,15 +110,8 @@ struct rdp_peer {
 	bool activate_waiting;
 	/* Closes the connection if it doesn't log on in time. */
 	struct aml_timer* login_timer;
-	/* The same time on a thread of its own (deadline.h), for a TLS or NLA
-	 * accept that blocks the main loop, where login_timer can't run: it
-	 * shuts the socket down, which ends a recv() blocked on it, and sets
-	 * FreeRDP's abort event, which ends a wait. Stopped once logged on. */
-	struct rdp_deadline* login_deadline;
-	struct {
-		HANDLE event;
-		int sock;
-	} login_abort;
+	/* FreeRDP's abort event: ends the thread's wait (stop_thread). */
+	HANDLE abort_event;
 	bool suppressed;
 	bool closing;
 
