@@ -500,6 +500,9 @@ static void session_handle_constraints_done(void *data,
 
 static void restart_session(struct ext_image_copy_capture* self)
 {
+	/* A capture scheduled for the old session must not come for the new
+	 * one before its constraints, nor next to the frame they start. */
+	aml_stop(aml_get_default(), self->timer);
 	ext_image_copy_capture_deinit_session(self);
 	if (self->is_cursor_session)
 		ext_image_copy_capture_init_cursor_session(self);
