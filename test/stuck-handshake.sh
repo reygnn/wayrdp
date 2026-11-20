@@ -7,7 +7,8 @@
 #  - mwc "A" headless, wayrdp -a nla on it, WAYRDP_LOGIN_TIMEOUT=3
 #  - test/x224-hold.py sends the X.224 request, reads the answer and then
 #    nothing; xfreerdp3 +auth-only must still log on, within 10 s, and the
-#    held connection must be closed for that, as stuck in the handshake
+#    held connection must be closed for that, as stuck in the handshake;
+#    a session that logged on (sdl-freerdp3) stays past the timeout
 #  - the same for -a pam (TLS only): the held connection is closed after
 #    the timeout and wayrdp answers a new one; a client that goes on its
 #    own during its password check isn't taken for a stuck one
@@ -97,6 +98,31 @@ echo "ok: a login gets in after $(($(date +%s) - start)) s while a connection is
 wait_log "stuck in the handshake" "$dir/wayrdp.log" "the stuck connection wasn't closed as such"
 echo "ok: the stuck connection is closed after the login timeout"
 kill "$HOLDER_PID" 2>/dev/null; wait "$HOLDER_PID" 2>/dev/null
+
+# A session that logged on outlives its deadline: once logged on, nothing
+# shuts its socket down.
+n_active=$(grep -c "active, " "$dir/wayrdp.log")
+XDG_RUNTIME_DIR=$dir/run WAYLAND_DISPLAY=wayland-0 sdl-freerdp3 /v:127.0.0.1:$PORT \
+	/u:$USER_NAME /p:"$PASSWORD" /cert:ignore /size:1024x768 /log-level:OFF \
+	>"$dir/client-nla.log" 2>&1 &
+session=$!
+pids+=($session)
+for ((i = 0; i < 100; i++)); do
+	[ "$(grep -c "active, " "$dir/wayrdp.log")" -gt "$n_active" ] && break
+	sleep 0.1
+done
+[ "$(grep -c "active, " "$dir/wayrdp.log")" -gt "$n_active" ] || fail "the NLA session never became active"
+# Twice the login timeout, watching that it stays.
+for ((i = 0; i < 60; i++)); do
+	grep -q "disconnected after\|logged on too late" "$dir/wayrdp.log" && break
+	kill -0 "$session" 2>/dev/null || break
+	sleep 0.1
+done
+grep -q "disconnected after\|logged on too late" "$dir/wayrdp.log" \
+	&& fail "the NLA session was cut after the login timeout"
+kill -0 "$session" 2>/dev/null || fail "the NLA client is gone"
+echo "ok: an NLA session stays past the login timeout"
+kill "$session" 2>/dev/null; wait "$session" 2>/dev/null
 
 # ---- -a pam ------------------------------------------------------------------
 PORT2=$((PORT + 1))
