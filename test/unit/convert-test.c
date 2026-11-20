@@ -74,6 +74,20 @@ static int test_pointer(void)
 	return 0;
 }
 
+/* A channel above alpha isn't valid premultiplied, but source-over onto a
+ * cleared cursor buffer passes one through: it saturates, it doesn't wrap. */
+static int test_invalid_premultiplied(void)
+{
+	const uint8_t src[4] = { 255, 0x20, 0x10, 0x10 };
+	uint8_t xor_out[4], and_out[2];
+	rdp_pointer_convert(src, 1, 1, sizeof(src), xor_out, and_out);
+	ASSERT_INT_EQ(255, xor_out[0]);
+	ASSERT_INT_EQ(255, xor_out[1]);
+	ASSERT_INT_EQ(255, xor_out[2]);
+	ASSERT_INT_EQ(0x10, xor_out[3]);
+	return 0;
+}
+
 static int test_and_padding(void)
 {
 	/* 17 pixels need 3 bytes, padded to 4. */
@@ -88,5 +102,6 @@ int main(void)
 	r |= test_clamp();
 	r |= test_pointer();
 	r |= test_and_padding();
+	r |= test_invalid_premultiplied();
 	return r;
 }

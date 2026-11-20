@@ -39,6 +39,12 @@ size_t rdp_pointer_and_size(uint32_t width, uint32_t height)
 	return (size_t)((width + 15) / 16) * 2 * height;
 }
 
+static uint8_t unpremultiply(uint8_t c, uint8_t a)
+{
+	unsigned v = (c * 255u + a / 2) / a;
+	return v > 255 ? 255 : v;
+}
+
 void rdp_pointer_convert(const uint8_t* src, uint32_t width, uint32_t height,
 		uint32_t stride, uint8_t* xor_out, uint8_t* and_out)
 {
@@ -61,10 +67,12 @@ void rdp_pointer_convert(const uint8_t* src, uint32_t width, uint32_t height,
 				continue;
 			}
 			if (a < 255) {
-				/* Premultiplied to straight, rounded. */
-				b = (b * 255 + a / 2) / a;
-				g = (g * 255 + a / 2) / a;
-				r = (r * 255 + a / 2) / a;
+				/* Premultiplied to straight, rounded. A channel above
+				 * alpha (not valid, but source-over passes one through)
+				 * saturates instead of wrapping. */
+				b = unpremultiply(b, a);
+				g = unpremultiply(g, a);
+				r = unpremultiply(r, a);
 			}
 			out[4 * x] = b;
 			out[4 * x + 1] = g;
