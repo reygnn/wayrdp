@@ -47,6 +47,7 @@
 #include "data-control.h"
 #include "image-source.h"
 #include "keyboard.h"
+#include "xkb-led.h"
 #include "log.h"
 #include "observer.h"
 #include "option-parser.h"
@@ -551,24 +552,17 @@ static void on_input_sync_locks(void* userdata, uint32_t locks)
 	if (!self->have_input)
 		return;
 
-	static const struct {
-		uint32_t rdp;
-		enum keyboard_led_state led;
-		uint32_t key;
-	} map[] = {
-		{ RDP_SYNC_CAPS_LOCK, KEYBOARD_LED_CAPS_LOCK, KEY_CAPSLOCK },
-		{ RDP_SYNC_NUM_LOCK, KEYBOARD_LED_NUM_LOCK, KEY_NUMLOCK },
-		{ RDP_SYNC_SCROLL_LOCK, KEYBOARD_LED_SCROLL_LOCK, KEY_SCROLLLOCK },
+	const struct xkb_lock map[] = {
+		{ KEY_CAPSLOCK + 8, XKB_LED_NAME_CAPS, locks & RDP_SYNC_CAPS_LOCK },
+		{ KEY_NUMLOCK + 8, XKB_LED_NAME_NUM, locks & RDP_SYNC_NUM_LOCK },
+		{ KEY_SCROLLLOCK + 8, XKB_LED_NAME_SCROLL, locks & RDP_SYNC_SCROLL_LOCK },
 	};
-
-	enum keyboard_led_state leds = keyboard_get_led_state(&self->keyboard);
-	for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); ++i) {
-		bool want = locks & map[i].rdp;
-		bool have = leds & map[i].led;
-		if (want == have)
-			continue;
-		keyboard_feed_code(&self->keyboard, map[i].key + 8, true);
-		keyboard_feed_code(&self->keyboard, map[i].key + 8, false);
+	xkb_keycode_t keys[3];
+	size_t n = xkb_locks_to_press(self->keyboard.keymap, self->keyboard.state,
+			map, 3, keys);
+	for (size_t i = 0; i < n; ++i) {
+		keyboard_feed_code(&self->keyboard, keys[i], true);
+		keyboard_feed_code(&self->keyboard, keys[i], false);
 	}
 }
 

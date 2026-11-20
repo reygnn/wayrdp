@@ -80,6 +80,7 @@ sources = [
 	'src/output-management.c',
 	'src/pointer.c',
 	'src/keyboard.c',
+	'src/xkb-led.c',
 	'src/seat.c',
 	'src/cfg.c',
 	'src/intset.c',

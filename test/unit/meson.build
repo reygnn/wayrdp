@@ -20,6 +20,7 @@ units = {
 	'intset': [['../../src/intset.c'], inc, []],
 	'log': [['../../src/log.c'], inc, []],
 	'time-util': [[], inc, []],
+	'xkb-led': [['../../src/xkb-led.c'], inc, [xkbcommon]],
 	'auth': [['../../src/rdp/auth.c', '../../src/log.c'], [inc, root_inc],
 		[freerdp, winpr, winpr_tools]],
 	'buffer': [['../../src/buffer.c', '../../src/shm.c', '../../src/log.c',
