@@ -47,6 +47,8 @@ bool rdp_flow_suspend(struct rdp_flow* self)
 {
 	bool was = self->waiting;
 	self->waiting = false;
+	if (was)
+		self->suspended = true;
 	return was;
 }
 
@@ -71,4 +73,14 @@ enum rdp_flow_timeout rdp_flow_timeout(struct rdp_flow* self)
 	}
 	self->acked = self->sent;
 	return RDP_FLOW_ACK_LOST;
+}
+
+bool rdp_flow_resume(struct rdp_flow* self)
+{
+	if (!self->suspended)
+		return false;
+	self->suspended = false;
+	self->waiting = true;
+	self->acked = self->sent;
+	return true;
 }

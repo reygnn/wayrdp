@@ -43,6 +43,8 @@ struct rdp_flow {
 	/* Wait for them (off when the client never acknowledges, or the
 	 * pipeline suspended acks). */
 	bool waiting;
+	/* The pipeline suspended acks: a later ack resumes them. */
+	bool suspended;
 	/* An ack has come since the reset. */
 	bool ack_seen;
 	/* The id of the last frame sent, and of the last one acknowledged. */
@@ -66,6 +68,10 @@ bool rdp_flow_ack(struct rdp_flow* self, uint32_t id);
 /* The client stops acknowledging (the pipeline's SUSPEND); true if it was
  * waited for until now. */
 bool rdp_flow_suspend(struct rdp_flow* self);
+/* An ack with another queue depth after a SUSPEND: the client acknowledges
+ * again, and what went out meanwhile counts as arrived. True if acks were
+ * suspended. */
+bool rdp_flow_resume(struct rdp_flow* self);
 uint32_t rdp_flow_in_flight(const struct rdp_flow* self);
 /* No new frame now: too many are unacknowledged. */
 bool rdp_flow_must_wait(const struct rdp_flow* self);

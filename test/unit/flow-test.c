@@ -92,6 +92,41 @@ static int test_suspend(void)
 	return 0;
 }
 
+/* A frame acknowledgement after a SUSPEND resumes them: what went out in
+ * between counts as arrived, then two may be on their way again. */
+static int test_resume(void)
+{
+	struct rdp_flow f;
+	rdp_flow_reset(&f, true);
+	ASSERT_FALSE(rdp_flow_resume(&f));
+	rdp_flow_suspend(&f);
+	for (int i = 0; i < 10; ++i)
+		rdp_flow_next_id(&f);
+	ASSERT_TRUE(rdp_flow_resume(&f));
+	ASSERT_FALSE(rdp_flow_resume(&f));
+	ASSERT_INT_EQ(0, (int)rdp_flow_in_flight(&f));
+	rdp_flow_next_id(&f);
+	ASSERT_FALSE(rdp_flow_must_wait(&f));
+	rdp_flow_next_id(&f);
+	ASSERT_TRUE(rdp_flow_must_wait(&f));
+	return 0;
+}
+
+/* Waiting switched off because no ack ever came stays off. */
+static int test_resume_never_acked(void)
+{
+	struct rdp_flow f;
+	rdp_flow_reset(&f, true);
+	rdp_flow_next_id(&f);
+	rdp_flow_next_id(&f);
+	ASSERT_INT_EQ(RDP_FLOW_NEVER_ACKED, rdp_flow_timeout(&f));
+	ASSERT_FALSE(rdp_flow_resume(&f));
+	rdp_flow_next_id(&f);
+	rdp_flow_next_id(&f);
+	ASSERT_FALSE(rdp_flow_must_wait(&f));
+	return 0;
+}
+
 /* A new surface: ids go on, nothing counts as on its way; a reset starts
  * the ids again. */
 static int test_continue_and_reset(void)
@@ -168,6 +203,8 @@ int main(void)
 	RUN_TEST(test_never_acked);
 	RUN_TEST(test_ack_lost);
 	RUN_TEST(test_suspend);
+	RUN_TEST(test_resume);
+	RUN_TEST(test_resume_never_acked);
 	RUN_TEST(test_continue_and_reset);
 	RUN_TEST(test_bad_acks);
 	RUN_TEST(test_wrap);

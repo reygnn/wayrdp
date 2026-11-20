@@ -158,10 +158,14 @@ static UINT on_frame_ack(RdpgfxServerContext* context,
 		const RDPGFX_FRAME_ACKNOWLEDGE_PDU* pdu)
 {
 	struct rdp_peer* self = context->custom;
-	if (pdu->queueDepth == SUSPEND_FRAME_ACKNOWLEDGEMENT
-			&& rdp_flow_suspend(&self->flow))
-		wv_log(WV_LOG_DEBUG, "%s: frame acknowledgements suspended",
+	if (pdu->queueDepth == SUSPEND_FRAME_ACKNOWLEDGEMENT) {
+		if (rdp_flow_suspend(&self->flow))
+			wv_log(WV_LOG_DEBUG, "%s: frame acknowledgements suspended",
+					self->client->hostname);
+	} else if (rdp_flow_resume(&self->flow)) {
+		wv_log(WV_LOG_DEBUG, "%s: frame acknowledgements resumed",
 				self->client->hostname);
+	}
 	if (!rdp_flow_ack(&self->flow, pdu->frameId))
 		wv_log(WV_LOG_DEBUG, "%s: ack for frame %u ignored (sent %u)",
 				self->client->hostname, pdu->frameId, self->flow.sent);
