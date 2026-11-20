@@ -165,11 +165,13 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
     Wayland nur, wenn der Compositor wp_fifo_v1 anbietet, sonst Xwayland,
     und dort ging das erste Rad-Ereignis verloren. mwc hat wp_fifo_v1 seit
     d48c2b9 (2026-11-11); die Tests brauchen ein mwc ab diesem Stand.
-    Schreibt einen Text von rund 200 kB aus der Zwischenablage mit
-    \u-Escapes und einem NUL am Ende (kleine Texte nicht); der große Text in
-    test/mwc-rdp.sh ist deshalb ASCII. Setzt die Auswahl nur mit Fokus und
-    dem Serial eines frischen Eingabe-Ereignisses (Wayland, kein Fehler):
-    die Tests drücken dafür Shift über test/vinput.
+    3.32 hängt an Text aus der Zwischenablage ein NUL an (in 3.33 behoben;
+    test/mwc-rdp.sh entfernt es). Für text/plain ohne charset liefert
+    FreeRDP ASCII mit \u-Escapes (gewollt); wl-paste fragt danach, wenn es
+    in eine .txt-Datei schreibt, deshalb gibt der Test den Typ an. Setzt
+    die Auswahl nur mit Fokus und dem Serial eines frischen
+    Eingabe-Ereignisses (Wayland, kein Fehler): die Tests drücken dafür
+    Shift über test/vinput.
   - xfreerdp3: nur noch für +auth-only (ohne Display). mwc hat seit
     9474172 (2026-11-20) kein Xwayland mehr; unter Xwayland gab xfreerdp3
     den Zeiger nur einmal weiter und behielt bei DesktopResize seine

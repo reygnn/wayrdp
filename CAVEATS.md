@@ -82,8 +82,7 @@ layout (`-k`) lacks are dropped.
 
 These concern the scripts in `test/`, not wayrdp. mwc has no Xwayland, so xfreerdp3
 only checks logins (`+auth-only`, no display) and sdl-freerdp3 is the client with a
-window. sdl-freerdp3 takes Wayland only where the compositor has `wp_fifo_v1`, it
-writes a clipboard text of some 200 kB with `\u` escapes and a NUL at its end, and the
-FreeRDP clients offer RemoteFX even with `-rfx`, so the Planar test needs
-`WAYRDP_FORCE_PLANAR=1`. wlfreerdp3 is deprecated: it now and then hangs once pointer
+window. sdl-freerdp3 takes Wayland only where the compositor has `wp_fifo_v1`, 3.32 ends a
+pasted text with a NUL (fixed in 3.33), and the FreeRDP clients offer RemoteFX even
+with `-rfx`, so the Planar test needs `WAYRDP_FORCE_PLANAR=1`. wlfreerdp3 is deprecated: it now and then hangs once pointer
 images come, its clipboard turns text into `\u` escapes, and it crashes on disconnect.

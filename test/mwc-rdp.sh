@@ -12,7 +12,7 @@
 #    on wayrdp's side (-k de).
 #  - mwc "C" runs sdl-freerdp3, which replaces B's session, with a keyboard
 #    from test/vinput; wl-copy in one, wl-paste in the other, both ways,
-#    Unicode and several lines, 192 kB from the session; no echo.
+#    Unicode and several lines, 228 kB from the session; no echo.
 #  - a pointer image goes to the client.
 #  - mwc "D" runs sdl-freerdp3 /f /dynamic-resolution on a 901x700 output:
 #    A's output becomes 900x700 (even width) and keeps its place in the
@@ -384,6 +384,26 @@ touch_c() {
 		[ "$answer" = ok ] || fail "vinput in C: $answer"
 	done
 }
+for ((i = 0; i < 50; i++)); do
+	[ "$(state c seat keyboard)" = com.freerdp.client.sdl3 ] && break
+	sleep 0.1
+done
+[ "$(state c seat keyboard)" = com.freerdp.client.sdl3 ] || fail "the client in C has no keyboard focus"
+# copy_to_c <command…>: copies in the session until the client in C holds
+# the selection; a key press that reached it too late is pressed again.
+copy_to_c() {
+	local try
+	for try in 1 2 3; do
+		touch_c
+		"$@"
+		for ((i = 0; i < 20; i++)); do
+			XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 wl-paste -l 2>/dev/null \
+				| grep -q '^x-special/freerdp-clipboard-update' && return 0
+			sleep 0.1
+		done
+	done
+	fail "the client in C never took the selection"
+}
 
 # wl_copy <mwc> <text>, wl_paste <mwc>
 wl_copy() { XDG_RUNTIME_DIR=$dir/$1/run WAYLAND_DISPLAY=wayland-0 wl-copy -- "$2"; }
@@ -402,8 +422,7 @@ expect_paste() {
 }
 
 text_a="Grüße aus A – 😀 €"
-touch_c
-wl_copy a "$text_a"
+copy_to_c wl_copy a "$text_a"
 expect_paste c "$text_a" "copied in the session, pasted on the client"
 
 text_c="Hallo von C: äöü ß @ – 日本"
@@ -412,28 +431,32 @@ expect_paste a "$text_c" "copied on the client, pasted in the session"
 
 # Several lines: LF in the session, CRLF on the wire, LF again.
 lines=$'Zeile 1\nZeile 2\n\nZeile 4'
-touch_c
-wl_copy a "$lines"
+copy_to_c wl_copy a "$lines"
 expect_paste c "$lines" "several lines from the session"
 wl_copy c "$lines C"
 expect_paste a "$lines C" "several lines from the client"
 
 # More than a pipe buffer from the session, from an owner that writes it
-# in one go and relies on the pipe to block (test/selowner). ASCII, and
-# without the NUL at its end: sdl-freerdp3 writes a text this large with
-# \u escapes and a NUL (TODO); the small ones above cover Unicode.
+# in one go and relies on the pipe to block (test/selowner). wl-paste
+# writing to a .txt file would ask for text/plain, which FreeRDP takes as
+# ASCII and fills with \u escapes: the type is given. FreeRDP 3.32 adds a
+# NUL at the end (fixed in 3.33), which goes.
 SELOWNER=$(dirname "$WAYRDP")/test/selowner
 [ -x "$SELOWNER" ] || fail "$SELOWNER not built"
-for ((i = 0; i < 12000; i++)); do printf 'Zeile %05d aou\n' $i; done >"$dir/big.txt"
-touch_c
-coproc SEL { XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 \
-	"$SELOWNER" <"$dir/big.txt" 2>"$dir/selowner.log"; }
-pids+=($!)
-read -r answer <&"${SEL[0]}"
-[ "$answer" = ok ] || fail "selowner did not take the selection"
+for ((i = 0; i < 12000; i++)); do printf 'Zeile %05d äöü\n' $i; done >"$dir/big.txt"
+start_selowner() {
+	local answer
+	coproc SEL { XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 \
+		"$SELOWNER" <"$dir/big.txt" 2>>"$dir/selowner.log"; }
+	pids+=($!)
+	read -r answer <&"${SEL[0]}"
+	[ "$answer" = ok ] || fail "selowner did not take the selection"
+}
+copy_to_c start_selowner
 for ((i = 0; i < 25; i++)); do
 	XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 \
-		timeout 10 wl-paste -n 2>/dev/null | tr -d '\0' >"$dir/big-pasted.txt"
+		timeout 10 wl-paste -n -t 'text/plain;charset=utf-8' 2>/dev/null \
+		| tr -d '\0' >"$dir/big-pasted.txt"
 	cmp -s "$dir/big.txt" "$dir/big-pasted.txt" && break
 	sleep 0.2
 done
