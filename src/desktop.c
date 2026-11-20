@@ -118,7 +118,7 @@ static enum image_source_power_state desktop_image_source_get_power_state(
 		}
 	}
 
-	wv_log(WV_LOG_DEBUG, "Returing power state: %s\n",
+	wv_log(WV_LOG_DEBUG, "Returing power state: %s",
 			image_source_power_state_name(state));
 	return state;
 }
@@ -188,7 +188,7 @@ static void desktop_image_source_output_power_change(struct observer* observer,
 	}
 
 	if (n_on == n || n_off == n) {
-		wv_log(WV_LOG_DEBUG, "Desktop power state changed\n");
+		wv_log(WV_LOG_DEBUG, "Desktop power state changed");
 		observable_notify(&desktop->image_source.observable.power_change,
 				NULL);
 	}

@@ -17,6 +17,7 @@ units = {
 		[freerdp, winpr, pixman]],
 	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
 	'intset': [['../../src/intset.c'], inc, []],
+	'log': [['../../src/log.c'], inc, []],
 	'deadline': [['../../src/rdp/deadline.c'], [inc, src_inc],
 		[dependency('threads')]],
 	'buffer': [['../../src/buffer.c', '../../src/shm.c', '../../src/log.c',

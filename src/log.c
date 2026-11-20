@@ -64,12 +64,25 @@ void wv__log(enum wv_log_level level, const char* file, int line,
 	const char* base = strrchr(file, '/');
 	base = base ? base + 1 : file;
 
-	char message[1024];
+	char raw[1024];
 	va_list ap;
 	va_start(ap, fmt);
 	errno = saved_errno;
-	vsnprintf(message, sizeof(message), fmt, ap);
+	vsnprintf(raw, sizeof(raw), fmt, ap);
 	va_end(ap);
+
+	/* One message, one line: control characters, which may come from a
+	 * client (its user name), are written as \xNN, so they can't start
+	 * a line of their own in the journal. */
+	char message[sizeof(raw) * 4];
+	size_t n = 0;
+	for (const unsigned char* c = (const unsigned char*)raw; *c; ++c) {
+		if (*c < 0x20 || *c == 0x7f)
+			n += snprintf(message + n, sizeof(message) - n, "\\x%02x", *c);
+		else
+			message[n++] = *c;
+	}
+	message[n] = '\0';
 
 	if (level >= WV_LOG_DEBUG)
 		fprintf(stderr, "%s: %s:%d: %s\n", level_name(level), base,

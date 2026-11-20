@@ -571,7 +571,7 @@ static void frame_handle_failed(void *data,
 	ext_image_copy_capture_frame_v1_destroy(self->frame);
 	self->frame = NULL;
 
-	wv_log(WV_LOG_DEBUG, "Failed!\n");
+	wv_log(WV_LOG_DEBUG, "Failed!");
 
 	assert(self->buffer);
 
