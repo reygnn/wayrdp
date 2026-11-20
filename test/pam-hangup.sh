@@ -13,7 +13,7 @@
 set -u
 
 WAYRDP=${1:-build/wayrdp}
-MWC=${MWC:-mwc}
+. "$(dirname "$0")/mwc.sh"
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 [ -e /etc/pam.d/wayrdp ] || { echo "SKIP: no /etc/pam.d/wayrdp"; exit 77; }
 for tool in sdl-freerdp3; do

@@ -2,8 +2,8 @@
 #
 #   make                     configure BUILDDIR if needed, then build
 #   make test                unit tests (meson test)
-#   make e2e MWC=…           every end-to-end script in test/, one after another
-#   make e2e-mwc-rdp MWC=…   one of them (e2e-<script name without .sh>)
+#   make e2e                 every end-to-end script in test/, one after another
+#   make e2e-mwc-rdp         one of them (e2e-<script name without .sh>)
 #   make install             meson install; DESTDIR is honoured
 #   make uninstall           remove what make install put in place (needs BUILDDIR)
 #   make reconfigure         meson setup --reconfigure with the variables below
@@ -19,10 +19,11 @@
 # BUILDTYPE, SYSCONFDIR and MESONFLAGS take effect when BUILDDIR is set up; for
 # an existing one use make reconfigure.
 #
-# The variables of the test scripts (MWC, PAM_PASSWORD, CLIENT, EXPECT_CODEC,
-# WAYRDP_WRAP, …) go through as they are, on the command line or from the
-# environment. A script that skips (exit 77, e.g. pam-rdp without PAM_PASSWORD)
-# does not fail make.
+# The end-to-end tests run the newest mwc, installed on the host, and fail
+# with an older one (test/mwc.sh). The variables of the test scripts (MWC,
+# MWC_REPO, PAM_PASSWORD, CLIENT, EXPECT_CODEC, WAYRDP_WRAP, …) go through as
+# they are, on the command line or from the environment. A script that skips
+# (exit 77, e.g. pam-rdp without PAM_PASSWORD) does not fail make.
 
 BUILDDIR   ?= build
 BUILDTYPE  ?= release
@@ -79,13 +80,8 @@ run_e2e = for t in $(1); do \
 	else echo "== $$t: ok"; fi; \
 	done
 
-check-mwc:
-	@[ -n "$(MWC)" ] || { echo "make: set MWC=/path/to/mwc for the end-to-end tests" >&2; exit 1; }
-
-.PHONY: check-mwc
-
-e2e: all check-mwc
+e2e: all
 	@$(call run_e2e,$(E2E))
 
-$(addprefix e2e-,$(E2E)): e2e-%: all check-mwc
+$(addprefix e2e-,$(E2E)): e2e-%: all
 	@$(call run_e2e,$*)

@@ -186,13 +186,17 @@ distrobox assemble create --replace --file distrobox.ini
 distrobox enter wayrdp-dev
 make                                    # release build in build/
 make test                               # unit tests
-make e2e MWC=/path/to/mwc               # every script in test/, one after another
-make e2e-mwc-rdp MWC=/path/to/mwc       # one of them, here -a nla
-make e2e-pam-rdp MWC=/path/to/mwc PAM_PASSWORD=…   # end to end, -a pam
+make e2e                                # every script in test/, one after another
+make e2e-mwc-rdp                        # one of them, here -a nla
+make e2e-pam-rdp PAM_PASSWORD=…         # end to end, -a pam
 ```
 
+The scripts run the mwc installed on the host (`/run/host/usr/local/bin/mwc` in the box),
+or `MWC=/path/to/mwc`. It must be the newest: a version older than the one on `main` in
+the mwc repository (`../mwc`, or `MWC_REPO`) fails the test.
+
 `make BUILDDIR=build-debug BUILDTYPE=debug` keeps wayrdp's asserts; the tests then take
-the same `BUILDDIR`. The scripts can also be run directly, `MWC=/path/to/mwc test/mwc-rdp.sh`. Besides
+the same `BUILDDIR`. The scripts can also be run directly, `test/mwc-rdp.sh`. Besides
 `mwc-rdp` and `pam-rdp` there are `pam-hangup` (wrong passwords, no `PAM_PASSWORD`
 needed), `mwc-probe` (capture only), `clipboard-shutdown`,
 `stuck-client` and `unplug-output`. `make e2e` counts a skipped script (exit 77, such as

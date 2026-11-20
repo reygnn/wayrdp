@@ -9,7 +9,7 @@ CLAUDE.md.
 Build and test inside the `wayrdp-dev` distrobox (`distrobox.ini`); the host lacks the
 test tools. `distrobox enter wayrdp-dev -- bash -lc 'cd ~/data/C-Projects/wayrdp && ...'`.
 
-The build is meson; the Makefile only wraps it (`make`, `make test`, `make e2e MWC=…`,
+The build is meson; the Makefile only wraps it (`make`, `make test`, `make e2e`,
 `make e2e-<script>`, `make install`, `make uninstall`, `make clean`, `make distclean`;
 release with `--sysconfdir=/etc` by default; see its header):
 
@@ -17,20 +17,22 @@ release with `--sysconfdir=/etc` by default; see its header):
 |---|---|
 | `meson setup build && ninja -C build` | wayrdp, `build/test/vinput` |
 | `meson test -C build` | unit tests in `test/unit/` |
-| `MWC=… test/mwc-rdp.sh` | end to end against a headless mwc, `-a nla` |
-| `MWC=… PAM_PASSWORD=… test/pam-rdp.sh` | end to end, `-a pam`; needs `/etc/pam.d/wayrdp` |
-| `MWC=… test/pam-hangup.sh` | `-a pam`, clients that hang up during the check; needs `/etc/pam.d/wayrdp`, no password |
-| `MWC=… test/mwc-probe.sh` | capture from mwc, no client |
-| `MWC=… test/clipboard-shutdown.sh` | exit with a clipboard read waiting, under valgrind |
-| `MWC=… test/stuck-client.sh` | a client that stops reading |
-| `MWC=… test/unplug-output.sh` | the captured output is unplugged |
+| `test/mwc-rdp.sh` | end to end against a headless mwc, `-a nla` |
+| `PAM_PASSWORD=… test/pam-rdp.sh` | end to end, `-a pam`; needs `/etc/pam.d/wayrdp` |
+| `test/pam-hangup.sh` | `-a pam`, clients that hang up during the check; needs `/etc/pam.d/wayrdp`, no password |
+| `test/mwc-probe.sh` | capture from mwc, no client |
+| `test/clipboard-shutdown.sh` | exit with a clipboard read waiting, under valgrind |
+| `test/stuck-client.sh` | a client that stops reading |
+| `test/unplug-output.sh` | the captured output is unplugged |
 
 Each script's header lists what it checks and its variables (`CLIENT`, `EXPECT_CODEC`,
 `WAYRDP_WRAP`, …).
 
-`MWC` is an mwc built from a copy, not inside the mwc repository:
-`git -C ../mwc archive HEAD | tar -x -C <dir>`, then `make mwc` there in the box. The
-tests need mwc d48c2b9 or later (`wp_fifo_v1`).
+wayrdp is tested against the newest mwc. The tests run the one installed on the host,
+`/run/host/usr/local/bin/mwc` in the box, and fail when its version is older than the
+one on `main` in `../mwc` (`test/mwc.sh`; `MWC_REPO` for another place). `MWC=…` picks
+another: one built from a copy, not inside the mwc repository
+(`git -C ../mwc archive main | tar -x -C <dir>`, then `make mwc` there in the box).
 
 
 ## Rules

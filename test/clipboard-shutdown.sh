@@ -16,7 +16,7 @@
 set -u
 
 WAYRDP=${1:-build/wayrdp}
-MWC=${MWC:-mwc}
+. "$(dirname "$0")/mwc.sh"
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 for tool in "$MWC" sdl-freerdp3 wl-copy wl-paste valgrind; do
 	command -v "$tool" >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
@@ -90,26 +90,38 @@ sleep 2
 
 # The client in C takes the selection only with keyboard focus and the
 # serial of a fresh input event: Shift, from a keyboard C doesn't have
-# otherwise, kept until the end.
+# otherwise (test/vinput). A press that came before the focus is pressed
+# again, with a new copy, until the client holds the selection.
 VINPUT=$(dirname "$WAYRDP")/test/vinput
 [ -x "$VINPUT" ] || fail "$VINPUT not built"
-{ printf 'key 42 1\nkey 42 0\n'; sleep 60; } | XDG_RUNTIME_DIR=$dir/c/run \
-	WAYLAND_DISPLAY=wayland-0 "$VINPUT" 1400 1000 >"$dir/vinput.out" 2>"$dir/vinput.log" &
-pids+=($!)
-for ((i = 0; i < 25; i++)); do
-	[ "$(grep -c '^ok$' "$dir/vinput.out")" = 2 ] && break
-	sleep 0.2
-done
-[ "$(grep -c '^ok$' "$dir/vinput.out")" = 2 ] || fail "vinput in C"
+coproc VIN { XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 \
+	"$VINPUT" 1400 1000 2>"$dir/vinput.log"; }
+pids+=($VIN_PID)
+press_shift() {
+	local ev answer
+	for ev in "key 42 1" "key 42 0"; do
+		echo "$ev" >&"${VIN[1]}"
+		read -r answer <&"${VIN[0]}" || fail "vinput in C is gone"
+		[ "$answer" = ok ] || fail "vinput in C: $answer"
+	done
+}
 
 # A selection owner in the session that never answers.
-XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 wl-copy --foreground -- "stuck" &
-copy=$!
-pids+=($copy)
-for ((i = 0; i < 25; i++)); do
-	grep -q "session clipboard has text" "$dir/wayrdp.log" && break
-	sleep 0.2
+held=
+for try in 1 2 3; do
+	press_shift
+	XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 wl-copy --foreground -- "stuck$try" &
+	copy=$!
+	pids+=($copy)
+	for ((i = 0; i < 20; i++)); do
+		XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 wl-paste -l 2>/dev/null \
+			| grep -q '^x-special/freerdp-clipboard-update' && held=1 && break
+		sleep 0.1
+	done
+	[ "$held" ] && break
+	kill "$copy"
 done
+[ "$held" ] || fail "the client in C never took the selection"
 kill -STOP "$copy"
 XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 timeout 8 wl-paste -n >/dev/null 2>&1 &
 pids+=($!)

@@ -14,7 +14,7 @@
 set -u
 
 WAYRDP=${1:-build/wayrdp}
-MWC=${MWC:-mwc}
+. "$(dirname "$0")/mwc.sh"
 for tool in "$MWC" foot sdl-freerdp3 xfreerdp3; do
 	command -v "$tool" >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done

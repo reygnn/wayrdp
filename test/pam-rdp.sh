@@ -12,7 +12,7 @@
 set -u
 
 WAYRDP=${1:-build/wayrdp}
-MWC=${MWC:-mwc}
+. "$(dirname "$0")/mwc.sh"
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 [ -n "${PAM_PASSWORD:-}" ] || { echo "SKIP: set PAM_PASSWORD"; exit 77; }
 [ -e /etc/pam.d/wayrdp ] || { echo "SKIP: no /etc/pam.d/wayrdp"; exit 77; }

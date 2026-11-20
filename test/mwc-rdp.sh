@@ -41,7 +41,7 @@
 set -u
 
 WAYRDP=${1:-build/wayrdp}
-MWC=${MWC:-mwc}
+. "$(dirname "$0")/mwc.sh"
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 CLIENT_SIZE=${CLIENT_SIZE:-1024x768}
 CLIENT_OPTS=${CLIENT_OPTS:-}

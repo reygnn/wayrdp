@@ -10,7 +10,7 @@
 set -u
 
 WAYRDP=${1:-build/wayrdp}
-MWC=${MWC:-mwc}
+. "$(dirname "$0")/mwc.sh"
 command -v "$MWC" >/dev/null || [ -x "$MWC" ] || { echo "FAIL: mwc not found, set MWC"; exit 1; }
 [ -x "$WAYRDP" ] || { echo "FAIL: $WAYRDP not built"; exit 1; }
 
