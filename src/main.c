@@ -155,14 +155,18 @@ static void start_capture(struct wayrdp* self, bool immediate)
 		}
 	}
 
+	/* Set first: a capture that ends at once, inside screencopy_start
+	 * (on_capture_done), leaves it false. */
+	bool was_capturing = self->capturing;
+	self->capturing = true;
 	if (screencopy_start(self->screencopy, immediate) < 0) {
 		wv_log(WV_LOG_ERROR, "Failed to start capture. Exiting...");
+		self->capturing = false;
 		wayrdp_exit(self, 1);
 		return;
 	}
-	if (self->cursor_sc && !self->capturing)
+	if (self->cursor_sc && !was_capturing && self->capturing)
 		screencopy_start(self->cursor_sc, true);
-	self->capturing = true;
 }
 
 static void stop_capture(struct wayrdp* self)

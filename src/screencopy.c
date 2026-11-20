@@ -141,9 +141,10 @@ static void screencopy_buffer_done(void* data,
 
 	struct wv_buffer* buffer = wv_buffer_pool_acquire(self->pool);
 	if (!buffer) {
+		/* No memory, say: worth a retry, not the end of the output. */
 		screencopy__stop(self);
-		self->status = WLR_SCREENCOPY_FATAL;
-		self->parent.on_done(SCREENCOPY_FATAL, NULL,
+		self->status = WLR_SCREENCOPY_FAILED;
+		self->parent.on_done(SCREENCOPY_FAILED, NULL,
 				&self->output->image_source,
 				self->parent.userdata);
 		return;

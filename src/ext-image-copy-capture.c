@@ -208,7 +208,8 @@ static void ext_image_copy_capture_schedule_capture(
 
 	self->buffer = wv_buffer_pool_acquire(self->pool);
 	if (!self->buffer) {
-		self->parent.on_done(SCREENCOPY_FATAL, NULL, self->image_source,
+		/* No memory, say: worth a retry, not the end of the output. */
+		self->parent.on_done(SCREENCOPY_FAILED, NULL, self->image_source,
 				self->parent.userdata);
 		return;
 	}
