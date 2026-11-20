@@ -301,11 +301,13 @@ static void on_session_text(void* cbdata, const char* text, size_t len)
 		return;
 	}
 
+	/* The limit (RDP_CLIPBOARD_MAX) counts bytes of the source and was
+	 * kept while reading; as UTF-16 it may be twice that. */
 	size_t out_len = 0;
 	uint8_t* utf16 = rdp_utf8_to_utf16le(text, len, &out_len);
-	if (!utf16 || out_len > RDP_CLIPBOARD_MAX) {
+	if (!utf16) {
+		wv_log(WV_LOG_WARNING, "Clipboard of %zu bytes not sent: no memory", len);
 		send_data_response(self, NULL, 0);
-		free(utf16);
 		return;
 	}
 	wv_log(WV_LOG_DEBUG, "Sending %zu bytes of clipboard to the client", len);

@@ -12,7 +12,7 @@
 #    on wayrdp's side (-k de).
 #  - mwc "C" runs sdl-freerdp3, which replaces B's session, with a keyboard
 #    from test/vinput; wl-copy in one, wl-paste in the other, both ways,
-#    Unicode and several lines, 228 kB from the session; no echo.
+#    Unicode and several lines, 228 kB and 9 MB from the session; no echo.
 #  - a pointer image goes to the client.
 #  - mwc "D" runs sdl-freerdp3 /f /dynamic-resolution on a 901x700 output:
 #    A's output becomes 900x700 (even width) and keeps its place in the
@@ -464,6 +464,21 @@ cmp -s "$dir/big.txt" "$dir/big-pasted.txt" \
 	|| fail "$(stat -c %s "$dir/big.txt") bytes copied in the session, $(stat -c %s "$dir/big-pasted.txt") pasted on the client"
 [ -s "$dir/selowner.log" ] && fail "selowner: $(cat "$dir/selowner.log")"
 echo "ok: $(stat -c %s "$dir/big.txt") bytes from the session"
+
+# 9 MB of ASCII: within the 16 MiB limit, which counts bytes of the source,
+# though twice that as UTF-16 on the wire.
+python3 -I -c 'import sys; sys.stdout.write(("x" * 99 + "\n") * 90000)' >"$dir/big.txt"
+copy_to_c start_selowner
+for ((i = 0; i < 50; i++)); do
+	XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 \
+		timeout 20 wl-paste -n -t 'text/plain;charset=utf-8' 2>/dev/null \
+		| tr -d '\0' >"$dir/big-pasted.txt"
+	cmp -s "$dir/big.txt" "$dir/big-pasted.txt" && break
+	sleep 0.2
+done
+cmp -s "$dir/big.txt" "$dir/big-pasted.txt" \
+	|| fail "9 MB from the session: $(stat -c %s "$dir/big-pasted.txt") bytes pasted on the client"
+echo "ok: 9 MB from the session"
 
 # No echo: one copy, one format list, not a loop.
 n=$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")
