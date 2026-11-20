@@ -164,14 +164,17 @@ static void start_capture(struct wayrdp* self, bool immediate)
 
 static void stop_capture(struct wayrdp* self)
 {
-	if (!self->capturing)
-		return;
-	screencopy_stop(self->screencopy);
-	if (self->cursor_sc)
-		screencopy_stop(self->cursor_sc);
+	if (self->capturing) {
+		screencopy_stop(self->screencopy);
+		if (self->cursor_sc)
+			screencopy_stop(self->cursor_sc);
+		self->capturing = false;
+	}
+	/* Also when not capturing: power control is held from the request on,
+	 * while waiting for the output to come on, and while it is off. Kept,
+	 * the next start would not ask for it to come on again. */
 	if (self->image_source)
 		image_source_release_power_on(self->image_source);
-	self->capturing = false;
 }
 
 /* Starts or stops the capture after a client came or went. */
@@ -741,6 +744,8 @@ static void on_power_change(struct observer* observer, void* arg)
 	case IMAGE_SOURCE_POWER_OFF:
 		wv_log(WV_LOG_WARNING, "Output is now off. Pausing frame capture");
 		screencopy_stop(self->screencopy);
+		if (self->cursor_sc)
+			screencopy_stop(self->cursor_sc);
 		self->capturing = false;
 		break;
 	default:
