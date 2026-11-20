@@ -35,7 +35,7 @@ NINJA ?= ninja
 
 SETUPFLAGS = --buildtype=$(BUILDTYPE) --sysconfdir=$(SYSCONFDIR) $(MESONFLAGS)
 
-E2E = mwc-rdp pam-rdp pam-hangup mwc-probe clipboard-shutdown stuck-client unplug-output
+E2E = mwc-rdp pam-rdp pam-hangup mwc-probe clipboard-shutdown stuck-client stuck-handshake unplug-output
 
 .PHONY: all setup reconfigure test install uninstall clean distclean e2e $(addprefix e2e-,$(E2E))
 

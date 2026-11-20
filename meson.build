@@ -108,9 +108,11 @@ sources = [
 	'src/rdp/cursor.c',
 	'src/rdp/gfx.c',
 	'src/rdp/flow.c',
+	'src/rdp/deadline.c',
 ]
 
 dependencies = [
+	dependency('threads'),
 	libm,
 	librt,
 	pixman,

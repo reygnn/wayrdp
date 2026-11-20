@@ -206,7 +206,7 @@ that doesn't name its commit, fails the test.
 the same `BUILDDIR`. The scripts can also be run directly, `test/mwc-rdp.sh`. Besides
 `mwc-rdp` and `pam-rdp` there are `pam-hangup` (wrong passwords, no `PAM_PASSWORD`
 needed), `mwc-probe` (capture only), `clipboard-shutdown`,
-`stuck-client` and `unplug-output`. `make e2e` counts a skipped script (exit 77, such as
+`stuck-client`, `stuck-handshake` and `unplug-output`. `make e2e` counts a skipped script (exit 77, such as
 `pam-rdp` without `PAM_PASSWORD`) as no failure and stops at the first one that fails. Each script's header says what it checks and
 which variables pick the client, codec or a valgrind wrapper; wayrdp warns at its start
 when one of its `WAYRDP_` test switches is on. `pam-rdp.sh` needs `/etc/pam.d/wayrdp`

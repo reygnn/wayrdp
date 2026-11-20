@@ -59,6 +59,8 @@ struct wv_buffer;
 
 #define RDP_MAX_PEER_HANDLES 8
 
+struct rdp_deadline;
+
 struct rdp_peer {
 	LIST_ENTRY(rdp_peer) link;
 	struct rdp_server* server;
@@ -89,6 +91,15 @@ struct rdp_peer {
 	bool activate_waiting;
 	/* Closes the connection if it doesn't log on in time. */
 	struct aml_timer* login_timer;
+	/* The same time on a thread of its own (deadline.h), for a TLS or NLA
+	 * accept that blocks the main loop, where login_timer can't run: it
+	 * shuts the socket down, which ends a recv() blocked on it, and sets
+	 * FreeRDP's abort event, which ends a wait. Stopped once logged on. */
+	struct rdp_deadline* login_deadline;
+	struct {
+		HANDLE event;
+		int sock;
+	} login_abort;
 	bool suppressed;
 	bool closing;
 

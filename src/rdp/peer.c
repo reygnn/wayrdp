@@ -35,6 +35,7 @@
 #include <winpr/sspi.h>
 
 #include "rdp/internal.h"
+#include "rdp/deadline.h"
 #include "log.h"
 #include "time-util.h"
 
@@ -94,6 +95,25 @@ static void on_login_timeout(struct aml_timer* timer)
 	rdp_peer_close(self);
 }
 
+/* On the deadline's thread: both calls are safe from there. */
+static void on_login_deadline(void* arg)
+{
+	struct rdp_peer* self = arg;
+	shutdown(self->login_abort.sock, SHUT_RDWR);
+	SetEvent(self->login_abort.event);
+}
+
+/* Logged on: the deadline goes. False if it had run out already, and the
+ * abort event is set: too late, the connection can't stay. */
+static bool stop_login_deadline(struct rdp_peer* self)
+{
+	bool fired = rdp_deadline_stop(self->login_deadline);
+	self->login_deadline = NULL;
+	if (fired)
+		wv_log(WV_LOG_WARNING, "%s logged on too late", self->client->hostname);
+	return !fired;
+}
+
 static void on_close_idle(struct aml_idle* idle)
 {
 	rdp_peer_destroy(aml_get_userdata(idle));
@@ -114,6 +134,9 @@ void rdp_peer_close(struct rdp_peer* self)
 
 void rdp_peer_destroy(struct rdp_peer* self)
 {
+	/* Before the context and its abort event go. */
+	rdp_deadline_stop(self->login_deadline);
+	self->login_deadline = NULL;
 	stop_handlers(self);
 	if (self->login_timer) {
 		aml_stop(aml_get_default(), self->login_timer);
@@ -158,6 +181,10 @@ static void on_peer_event(struct aml_handler* handler)
 		return;
 
 	if (!self->client->CheckFileDescriptor(self->client)) {
+		if (!self->logged_on && self->login_abort.event
+				&& WaitForSingleObject(self->login_abort.event, 0) == WAIT_OBJECT_0)
+			wv_log(WV_LOG_WARNING, "%s didn't log on in time (stuck in the handshake)",
+					self->client->hostname);
 		rdp_peer_close(self);
 		return;
 	}
@@ -273,6 +300,8 @@ static BOOL on_logon(freerdp_peer* client, const SEC_WINNT_AUTH_IDENTITY* identi
 		return FALSE;
 	}
 
+	if (!stop_login_deadline(self))
+		return FALSE;
 	wv_log(WV_LOG_INFO, "%s: logged on as %s", client->hostname, user);
 	self->logged_on = true;
 	rdp_server_peer_logged_on(self->server, self);
@@ -362,6 +391,8 @@ static void on_pam_done(struct aml_work* work)
 		if (!job->ok) {
 			wv_log(WV_LOG_WARNING, "%s: wrong password for %s",
 					self->client->hostname, job->user);
+			rdp_peer_close(self);
+		} else if (!stop_login_deadline(self)) {
 			rdp_peer_close(self);
 		} else {
 			wv_log(WV_LOG_INFO, "%s: logged on as %s (PAM)",
@@ -795,6 +826,14 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 			self, NULL);
 	if (self->login_timer)
 		aml_start(aml_get_default(), self->login_timer);
+	/* Set before the thread starts, read only by it; the socket stays
+	 * open until the deadline is stopped (rdp_peer_destroy). */
+	self->login_abort.event = freerdp_abort_event(client->context);
+	self->login_abort.sock = self->sock;
+	self->login_deadline = rdp_deadline_start(login_timeout_us(server),
+			on_login_deadline, self);
+	if (!self->login_deadline)
+		wv_log(WV_LOG_WARNING, "%s: no login deadline thread", client->hostname);
 
 	LIST_INSERT_HEAD(&server->peers, self, link);
 	wv_log(WV_LOG_INFO, "Connection from %s", client->hostname);
