@@ -355,24 +355,46 @@ static SECURITY_STATUS on_ntlm_hash(void* client,
 struct pam_job {
 	struct rdp_server* server;
 	uint64_t serial;
+	/* When the check began: a refusal is answered RDP_PAM_REFUSAL_US
+	 * after it, whatever was wrong. */
+	uint64_t start_us;
 	char* user;
 	char* password;
 	/* The client's address, for PAM_RHOST. */
 	char* rhost;
-	/* The name the client gave isn't the account: refused, after as long
-	 * as PAM takes, so the time doesn't tell which names are wrong. */
+	/* The name the client gave isn't the account: no PAM, refused. */
 	char* wrong_user;
 	enum rdp_pam_result result;
+	/* Waits on the main loop until the refusal is answered, so the one
+	 * worker, which the encoder needs too, only runs PAM itself. */
+	struct aml_timer* answer_timer;
 };
+
+static void clear_password(struct pam_job* job)
+{
+	if (job->password) {
+		memset(job->password, 0, strlen(job->password));
+		free(job->password);
+		job->password = NULL;
+	}
+}
+
+static void free_pam_job(struct pam_job* job)
+{
+	if (job->answer_timer) {
+		aml_stop(aml_get_default(), job->answer_timer);
+		aml_unref(job->answer_timer);
+	}
+	clear_password(job);
+	free(job->user);
+	free(job->rhost);
+	free(job->wrong_user);
+	free(job);
+}
 
 static void on_pam_work(struct aml_work* work)
 {
 	struct pam_job* job = aml_get_userdata(work);
-	if (job->wrong_user) {
-		rdp_auth_pam_refusal_wait(rdp_auth_pam_now_us());
-		job->result = RDP_PAM_REFUSED;
-		return;
-	}
 	job->result = rdp_auth_pam(NULL, job->user, job->password, job->rhost);
 }
 
@@ -389,9 +411,10 @@ static void log_refusal(const char* host, const struct pam_job* job)
 		wv_log(WV_LOG_WARNING, "%s: wrong password for %s", host, job->user);
 }
 
-static void on_pam_done(struct aml_work* work)
+/* The check is over: the connection logs on, or is refused. Until here
+ * the job counts in pam_jobs, its wait for the answer too. */
+static void answer_pam(struct pam_job* job)
 {
-	struct pam_job* job = aml_get_userdata(work);
 	struct rdp_server* server = job->server;
 	server->pam_jobs--;
 
@@ -428,19 +451,35 @@ static void on_pam_done(struct aml_work* work)
 			}
 		}
 	}
+	free_pam_job(job);
 }
 
-static void free_pam_job(void* userdata)
+static void on_answer_timer(struct aml_timer* timer)
 {
-	struct pam_job* job = userdata;
-	if (job->password) {
-		memset(job->password, 0, strlen(job->password));
-		free(job->password);
+	answer_pam(aml_get_userdata(timer));
+}
+
+/* A success at once; a refusal RDP_PAM_REFUSAL_US after the start. */
+static void schedule_answer(struct pam_job* job)
+{
+	uint64_t now = gettime_us();
+	uint64_t due = job->start_us + RDP_PAM_REFUSAL_US;
+	if (job->result == RDP_PAM_OK || now >= due) {
+		answer_pam(job);
+		return;
 	}
-	free(job->user);
-	free(job->rhost);
-	free(job->wrong_user);
-	free(job);
+	job->answer_timer = aml_timer_new(due - now, on_answer_timer, job, NULL);
+	if (!job->answer_timer || aml_start(aml_get_default(), job->answer_timer) < 0) {
+		/* Sooner than it should, but answered. */
+		answer_pam(job);
+	}
+}
+
+static void on_pam_done(struct aml_work* work)
+{
+	struct pam_job* job = aml_get_userdata(work);
+	clear_password(job);
+	schedule_answer(job);
 }
 
 /* The credentials mstsc sent along (saved credentials; without them it
@@ -465,13 +504,24 @@ static bool start_pam(struct rdp_peer* self)
 	struct pam_job* job = calloc(1, sizeof(*job));
 	if (!job)
 		return false;
-	/* A guess as well, counted and answered like a wrong password. */
-	if (strcasecmp(user, me) != 0 && !(job->wrong_user = strdup(user))) {
-		free(job);
-		return false;
-	}
 	job->server = self->server;
 	job->serial = self->serial;
+	job->start_us = gettime_us();
+	/* A guess as well, counted and answered like a wrong password, with
+	 * no PAM and no worker. */
+	if (strcasecmp(user, me) != 0) {
+		job->wrong_user = strdup(user);
+		freerdp_settings_set_string(settings, FreeRDP_Password, NULL);
+		if (!job->wrong_user) {
+			free_pam_job(job);
+			return false;
+		}
+		job->result = RDP_PAM_REFUSED;
+		self->server->pam_jobs++;
+		self->pam_pending = true;
+		schedule_answer(job);
+		return true;
+	}
 	/* PAM wants the account's own spelling. */
 	job->user = strdup(me);
 	job->rhost = strdup(client->hostname);
@@ -479,14 +529,13 @@ static bool start_pam(struct rdp_peer* self)
 	/* The settings needn't keep it. */
 	freerdp_settings_set_string(settings, FreeRDP_Password, NULL);
 
-	struct aml_work* work = aml_work_new(on_pam_work, on_pam_done, job,
-			free_pam_job);
+	/* The job outlives the work: it may wait for its answer after. */
+	struct aml_work* work = aml_work_new(on_pam_work, on_pam_done, job, NULL);
 	if (!job->user || !job->password || !job->rhost || !work
 			|| aml_start(aml_get_default(), work) < 0) {
 		if (work)
 			aml_unref(work);
-		else
-			free_pam_job(job);
+		free_pam_job(job);
 		return false;
 	}
 	aml_unref(work);

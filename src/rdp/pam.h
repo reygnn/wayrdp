@@ -25,7 +25,6 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
 
 enum rdp_pam_result {
 	RDP_PAM_OK,
@@ -38,21 +37,16 @@ enum rdp_pam_result {
 	RDP_PAM_ERROR,
 };
 
-/* A refusal takes this long at least, whatever the reason, so the time
- * of the answer tells nothing: pam_unix waits about as long after a wrong
- * password, wayrdp after a refused account or user name. */
+/* Every refusal is answered this long after the check began, whatever
+ * was wrong, so its time tells nothing. The caller waits (peer.c, on the
+ * main loop, not in the worker); rdp_auth_pam doesn't. */
 #define RDP_PAM_REFUSAL_US 2000000
 
 /* Checks user's password and that the account may log in. confdir is
  * where the service's file is, NULL for /etc/pam.d. rhost, the client's
  * address, goes to PAM as PAM_RHOST, so modules and logs see a login
- * from elsewhere. Blocks, a refusal for RDP_PAM_REFUSAL_US at least. */
+ * from elsewhere. PAM's own delay after a failure is off: it is random
+ * (pam_unix: 1 to 3 s) and would tell a wrong password from the rest. */
 enum rdp_pam_result rdp_auth_pam(const char* confdir, const char* user,
 		const char* password, const char* rhost);
-
-/* For a refusal without PAM (a user name that isn't the account): waits
- * as long as one from PAM. */
-void rdp_auth_pam_refusal_wait(uint64_t since_us);
-
-uint64_t rdp_auth_pam_now_us(void);
 bool rdp_auth_have_pam(void);

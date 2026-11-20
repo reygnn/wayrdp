@@ -27,10 +27,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <time.h>
+
 #include "tst.h"
 #include "rdp/pam.h"
 
 static char dir[] = "/tmp/wayrdp-pam-test.XXXXXX";
+
+static uint64_t now_us(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
 static char out[4096];
 
 static int write_file(const char* name, const char* text, mode_t mode)
@@ -74,10 +83,7 @@ static int test_items(void)
 		"auth required pam_permit.so\n"
 		"account required pam_permit.so\n", dir);
 	ASSERT_INT_EQ(0, service(conf));
-	uint64_t start = rdp_auth_pam_now_us();
 	ASSERT_INT_EQ(RDP_PAM_OK, rdp_auth_pam(dir, "someone", "secret 1", "192.0.2.7"));
-	/* A success doesn't wait. */
-	ASSERT_TRUE(rdp_auth_pam_now_us() - start < RDP_PAM_REFUSAL_US / 2);
 	const char* d = dumped();
 	ASSERT_TRUE(strstr(d, "rhost=192.0.2.7\n") != NULL);
 	ASSERT_TRUE(strstr(d, "ruser=someone\n") != NULL);
@@ -91,22 +97,31 @@ static int test_refused(void)
 {
 	ASSERT_INT_EQ(0, service("auth required pam_deny.so\n"
 				"account required pam_permit.so\n"));
-	uint64_t start = rdp_auth_pam_now_us();
 	ASSERT_INT_EQ(RDP_PAM_REFUSED, rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
-	ASSERT_TRUE(rdp_auth_pam_now_us() - start >= RDP_PAM_REFUSAL_US);
 	return 0;
 }
 
-/* The password is right, the account may not log in: told apart, and
- * answered no sooner than a wrong password, so the time doesn't tell
- * that the password was right. */
+/* PAM's own delay after a failure is random (base 1.5 to 4.5 times here:
+ * 3 to 9 s) and would tell a wrong password apart: it is off, the
+ * refusal comes at once, and peer.c waits a fixed time itself. */
+static int test_no_fail_delay(void)
+{
+	ASSERT_INT_EQ(0, service("auth required pam_faildelay.so delay=6000000\n"
+				"auth required pam_deny.so\n"
+				"account required pam_permit.so\n"));
+	uint64_t start = now_us();
+	ASSERT_INT_EQ(RDP_PAM_REFUSED, rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
+	ASSERT_TRUE(now_us() - start < 1000000);
+	return 0;
+}
+
+/* The password is right, the account may not log in: told apart (peer.c
+ * answers it after the same time as a wrong password). */
 static int test_account(void)
 {
 	ASSERT_INT_EQ(0, service("auth required pam_permit.so\n"
 				"account required pam_deny.so\n"));
-	uint64_t start = rdp_auth_pam_now_us();
 	ASSERT_INT_EQ(RDP_PAM_ACCOUNT, rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
-	ASSERT_TRUE(rdp_auth_pam_now_us() - start >= RDP_PAM_REFUSAL_US);
 	return 0;
 }
 
@@ -172,6 +187,7 @@ int main(void)
 	int r = 0;
 	RUN_TEST(test_items);
 	RUN_TEST(test_refused);
+	RUN_TEST(test_no_fail_delay);
 	RUN_TEST(test_account);
 	RUN_TEST(test_service_file);
 	return r;

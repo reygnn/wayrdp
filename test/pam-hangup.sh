@@ -11,9 +11,9 @@
 #    lock new connections out
 #  - checks that go on after their client left count toward the four that
 #    may wait at a time, added to the connections waiting themselves
-#    (pam_unix delays a failure by about two seconds, so they pile up)
-#  - a user name that isn't the account is refused no sooner than a wrong
-#    password, and three of them lock out
+#    (each refusal is answered 2 s after its check began, so they pile up)
+#  - a wrong password and a user name that isn't the account are refused
+#    after the same time (2 s), and count toward the lockout
 # WAYRDP_WRAP goes in front of wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
@@ -127,8 +127,7 @@ echo "ok: their guesses count, locked out"
 # Checks whose clients left still wait for the worker and count toward
 # the four, beside connections that wait for their own. A fresh wayrdp,
 # the one above is locked out. Three at once in one mwc, so all three
-# checks are queued before the first is answered (the one worker takes
-# about two seconds a check).
+# checks are queued before the first is answered (2 s after it began).
 PORT2=$((PORT + 1))
 start_wayrdp "$PORT2" "$dir/wayrdp2.log"
 cmd=
@@ -151,33 +150,37 @@ done
 	|| fail "the fourth connection wasn't accepted beside three checks"
 # Before the fifth: with a check already answered (slow handshakes, or
 # under valgrind) three would be left, and the fifth rightly accepted.
-[ "$(count "PAM: Authentication failure" "$dir/wayrdp2.log")" = 0 ] \
+[ "$(count "A client that is gone" "$dir/wayrdp2.log")" = 0 ] \
 	|| fail "a check was answered before the fifth came; the test needs all three waiting"
 exec 4<>/dev/tcp/127.0.0.1/$PORT2
 wait_count "Connection refused: 4 are logging on already" 1 \
 	"a fifth connection wasn't refused beside three checks and one waiting" "$dir/wayrdp2.log"
 exec 3>&- 4>&-
 echo "ok: checks of clients that left count toward the four, beside waiting connections"
-# A user name that isn't the account is a guess too: refused no sooner
-# than a wrong password, so the time doesn't tell, and three of them lock
-# out. A fresh wayrdp; the clients stay until they are refused.
+# A wrong user name is a guess too, and every refusal comes after the same
+# time, so the time doesn't tell a wrong name from a wrong password: about
+# RDP_PAM_REFUSAL_US (2 s), polled every 0.1 s. One wrong password and two
+# wrong names, the clients there until refused, lock out. A fresh wayrdp.
 PORT3=$((PORT + 2))
 start_wayrdp "$PORT3" "$dir/wayrdp3.log"
-for n in 1 2 3; do
-	client_as() {
-		start_mwc "$1" "sdl-freerdp3 /v:127.0.0.1:$PORT3 /sec:tls /cert:ignore /size:1024x768 /u:not-$USER_NAME-$n /p:wrong-$1 /t:$1 /log-level:WARN >$dir/client-$1.log 2>&1"
-	}
+n=0
+for user in "$USER_NAME" "not-$USER_NAME-2" "not-$USER_NAME-3"; do
+	n=$((n + 1))
+	if [ "$user" = "$USER_NAME" ]; then refusal="127.0.0.1: wrong password for $USER_NAME"
+	else refusal="user $user refused"; fi
 	sent=$(count "client wants" "$dir/wayrdp3.log")
-	client_as u$n
+	start_mwc u$n "sdl-freerdp3 /v:127.0.0.1:$PORT3 /sec:tls /cert:ignore /size:1024x768 /u:$user /p:wrong-u$n /t:u$n /log-level:WARN >$dir/client-u$n.log 2>&1"
 	wait_count "client wants" $((sent + 1)) "client u$n sent no credentials" "$dir/wayrdp3.log"
 	t0=$(date +%s%N)
-	wait_count "user not-$USER_NAME-$n refused" 1 "the user name of u$n wasn't refused" "$dir/wayrdp3.log"
+	wait_count "$refusal" 1 "u$n ($user) wasn't refused" "$dir/wayrdp3.log"
 	ms=$((($(date +%s%N) - t0) / 1000000))
-	[ "$ms" -ge 1500 ] || fail "user name $n refused after $ms ms, sooner than a wrong password"
+	[ "$ms" -ge 1700 ] && [ "$ms" -le 2700 ] \
+		|| fail "u$n ($user) refused after $ms ms, not about 2 s"
+	echo "ok: u$n refused after $ms ms"
 	hang_up u$n
 done
 exec 3<>/dev/tcp/127.0.0.1/$PORT3
-wait_count "Connection refused: locked" 1 "no lockout after three wrong user names" "$dir/wayrdp3.log"
+wait_count "Connection refused: locked" 1 "no lockout after a wrong password and two wrong user names" "$dir/wayrdp3.log"
 exec 3>&-
-echo "ok: wrong user names take as long as wrong passwords and lock out"
+echo "ok: wrong user names and wrong passwords take the same time and lock out"
 echo "PASS"
