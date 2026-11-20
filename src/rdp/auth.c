@@ -122,10 +122,12 @@ int rdp_auth_ensure_certificate(const char* cert_file, const char* key_file)
 		}
 		char buf[4096];
 		size_t n;
-		while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
-			fwrite(buf, 1, n, out);
+		bool ok = true;
+		while (ok && (n = fread(buf, 1, sizeof(buf), in)) > 0)
+			ok = fwrite(buf, 1, n, out) == n;
+		ok = ok && !ferror(in);
 		fclose(in);
-		if (fclose(out) != 0) {
+		if (fclose(out) != 0 || !ok) {
 			wv_log(WV_LOG_ERROR, "Can't write %s: %m", to[i]);
 			goto out;
 		}
@@ -133,6 +135,12 @@ int rdp_auth_ensure_certificate(const char* cert_file, const char* key_file)
 	rc = 0;
 
 out:
+	/* Neither half stays: with both there the next start would take a
+	 * broken one, with one missing it makes both again. */
+	if (rc != 0) {
+		unlink(cert_file);
+		unlink(key_file);
+	}
 	umask(old_umask);
 	makecert_context_free(mc);
 	unlink(crt);

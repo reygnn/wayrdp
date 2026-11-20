@@ -18,6 +18,8 @@ units = {
 	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
 	'intset': [['../../src/intset.c'], inc, []],
 	'log': [['../../src/log.c'], inc, []],
+	'auth': [['../../src/rdp/auth.c', '../../src/log.c'], [inc, root_inc],
+		[freerdp, winpr, winpr_tools]],
 	'buffer': [['../../src/buffer.c', '../../src/shm.c', '../../src/log.c',
 		'../../src/pixels.c', '../../src/util.c', '../../src/strlcpy.c'],
 		[inc, root_inc], [wayland_client, client_protos, pixman, drm]],
