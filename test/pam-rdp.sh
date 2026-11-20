@@ -82,10 +82,16 @@ wait_log "Listening on" "wayrdp doesn't listen"
 echo "ok: wayrdp -a pam listens on $PORT, without a SAM file"
 
 USER_NAME=$(id -un)
-client() {	# client <mwc> <args…>: sdl-freerdp3 over TLS in a new mwc
+# client <mwc> <args…>: sdl-freerdp3 over TLS in a new mwc. Its arguments
+# go through a file only the user can read (/args-from), so the password
+# is on no command line, not even mwc's.
+client() {
 	local name=$1; shift
+	local args=$dir/client-$name.args
+	(umask 077; printf '%s\n' /v:127.0.0.1:$PORT /sec:tls /cert:ignore \
+		/size:1024x768 "$@" /log-level:WARN >"$args")
 	start_mwc "$name" '#000000' \
-		"sdl-freerdp3 /v:127.0.0.1:$PORT /sec:tls /cert:ignore /size:1024x768 $* /log-level:WARN >$dir/client-$name.log 2>&1"
+		"sdl-freerdp3 /args-from:file:$args >$dir/client-$name.log 2>&1"
 }
 
 # The right password: the picture.
@@ -161,6 +167,7 @@ grep -q "Connection refused: 4 are logging on already" "$dir/wayrdp2.log" \
 	|| fail "a fifth waiting connection wasn't refused"
 echo "ok: at most four connections wait for their logon"
 
-grep -q "$PAM_PASSWORD" "$dir/wayrdp.log" && fail "the password is in the log"
+# The password as grep's pattern file, not its argument.
+grep -qF -f - "$dir/wayrdp.log" <<<"$PAM_PASSWORD" && fail "the password is in the log"
 echo "ok: the password is not in the log"
 echo "PASS"
