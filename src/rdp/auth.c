@@ -89,6 +89,8 @@ int rdp_auth_ensure_certificate(const char* cert_file, const char* key_file)
 	}
 
 	int rc = -1;
+	/* What this call opened for writing: only that goes on a failure. */
+	bool written[2] = { false, false };
 	char crt[sizeof(tmpdir) + 16], key[sizeof(tmpdir) + 16];
 	snprintf(crt, sizeof(crt), "%s/tls.crt", tmpdir);
 	snprintf(key, sizeof(key), "%s/tls.key", tmpdir);
@@ -113,6 +115,7 @@ int rdp_auth_ensure_certificate(const char* cert_file, const char* key_file)
 	for (int i = 0; i < 2; ++i) {
 		FILE* in = fopen(from[i], "r");
 		int fd = open(to[i], O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		written[i] = fd >= 0;
 		FILE* out = fd >= 0 ? fdopen(fd, "w") : NULL;
 		if (!in || !out) {
 			wv_log(WV_LOG_ERROR, "Can't write %s: %m", to[i]);
@@ -135,11 +138,14 @@ int rdp_auth_ensure_certificate(const char* cert_file, const char* key_file)
 	rc = 0;
 
 out:
-	/* Neither half stays: with both there the next start would take a
-	 * broken one, with one missing it makes both again. */
+	/* Neither half this call wrote stays: with both there the next
+	 * start would take a broken one, with one missing it makes both
+	 * again. A file it didn't open (makecert failed first) is left. */
 	if (rc != 0) {
-		unlink(cert_file);
-		unlink(key_file);
+		if (written[0])
+			unlink(cert_file);
+		if (written[1])
+			unlink(key_file);
 	}
 	umask(old_umask);
 	makecert_context_free(mc);

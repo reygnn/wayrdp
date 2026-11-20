@@ -63,6 +63,29 @@ static int test_write_fails(void)
 	return 0;
 }
 
+/* A certificate of the user's that can't be written, the key missing: the
+ * new pair can't go there, and the certificate it didn't write stays. */
+static int test_keeps_unwritten(void)
+{
+	FILE* f = fopen(cert, "w");
+	ASSERT_TRUE(f != NULL);
+	fputs("mine\n", f);
+	fclose(f);
+	ASSERT_INT_EQ(0, chmod(cert, 0400));
+	ASSERT_INT_EQ(-1, rdp_auth_ensure_certificate(cert, key));
+	ASSERT_TRUE(exists(cert));
+	char buf[16] = "";
+	f = fopen(cert, "r");
+	ASSERT_TRUE(f != NULL);
+	ASSERT_TRUE(fgets(buf, sizeof(buf), f) != NULL);
+	fclose(f);
+	ASSERT_INT_EQ(0, strcmp(buf, "mine\n"));
+	chmod(cert, 0600);
+	unlink(cert);
+	unlink(key);
+	return 0;
+}
+
 int main(void)
 {
 	if (!mkdtemp(dir))
@@ -72,6 +95,7 @@ int main(void)
 	int r = 0;
 	RUN_TEST(test_made);
 	RUN_TEST(test_write_fails);
+	RUN_TEST(test_keeps_unwritten);
 	unlink(cert);
 	unlink(key);
 	rmdir(dir);
