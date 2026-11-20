@@ -1109,7 +1109,11 @@ bool rdp_peer_resize(struct rdp_peer* self, uint32_t width, uint32_t height)
 	wv_log(WV_LOG_INFO, "%s: desktop resized to %ux%u", self->client->hostname,
 			width, height);
 
-	/* The client deactivates and comes back through Activate. */
+	/* The client deactivates and comes back through Activate. Input is
+	 * dropped meanwhile, releases too: let go of all now, as on a
+	 * takeover, so nothing stays pressed. */
+	if (self->server->active == self)
+		rdp_input_release(self);
 	self->activated = false;
 	if (!freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, width)
 			|| !freerdp_settings_set_uint32(settings,
