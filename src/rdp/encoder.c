@@ -211,7 +211,7 @@ static bool encode_planar(struct rdp_encoder* self, struct rdp_encode_job* job)
 		 * compressor takes the tile's size from its arguments, and a
 		 * reset reallocates its four buffers each time (WinPR keeps a
 		 * block only if it is larger than asked for), ~72 kB copied
-		 * per tile. test/planar-test.c pins that the output is the
+		 * per tile. test/unit/planar-test.c pins that the output is the
 		 * same. */
 		const uint8_t* src = pixels + (size_t)b->y * job->stride
 			+ (size_t)b->x * 4;

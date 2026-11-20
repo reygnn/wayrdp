@@ -16,7 +16,7 @@ release with `--sysconfdir=/etc` by default; see its header):
 | Command | |
 |---|---|
 | `meson setup build && ninja -C build` | wayrdp, `build/test/vinput` |
-| `meson test -C build` | unit tests |
+| `meson test -C build` | unit tests in `test/unit/` |
 | `MWC=… test/mwc-rdp.sh` | end to end against a headless mwc, `-a nla` |
 | `MWC=… PAM_PASSWORD=… test/pam-rdp.sh` | end to end, `-a pam`; needs `/etc/pam.d/wayrdp` |
 | `MWC=… test/mwc-probe.sh` | capture from mwc, no client |

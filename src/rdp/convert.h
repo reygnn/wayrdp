@@ -16,7 +16,7 @@
 
 /*
  * Desktop sizes and pointer images, as RDP wants them. No FreeRDP in here
- * (test/convert-test.c).
+ * (test/unit/convert-test.c).
  */
 
 #pragma once

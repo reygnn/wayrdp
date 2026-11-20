@@ -26,7 +26,7 @@
  * suspend acks. Clients that send no ids at all (Planar, surface bits
  * without frame markers) are never waited for.
  *
- * Plain state, no FreeRDP: test/flow-test.c pins it.
+ * Plain state, no FreeRDP: test/unit/flow-test.c pins it.
  */
 
 #pragma once

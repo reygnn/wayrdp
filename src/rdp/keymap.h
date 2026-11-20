@@ -17,7 +17,7 @@
 /*
  * RDP input as Linux sees it: scancodes to evdev codes, wheel values, UTF-16
  * from the Unicode keyboard events. No FreeRDP in here, so the unit tests
- * can pin it (test/keymap-test.c).
+ * can pin it (test/unit/keymap-test.c).
  */
 
 #pragma once

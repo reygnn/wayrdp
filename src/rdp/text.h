@@ -17,7 +17,7 @@
 /*
  * Clipboard text between RDP and Wayland: CF_UNICODETEXT is UTF-16LE with
  * CRLF line ends and a terminating NUL, Wayland text is UTF-8 with LF.
- * No FreeRDP in here (test/text-test.c).
+ * No FreeRDP in here (test/unit/text-test.c).
  */
 
 #pragma once
