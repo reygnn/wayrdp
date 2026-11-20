@@ -1,0 +1,2 @@
+/* Written by meson (vcs_tag, util/gitversion.sh): the commit built. */
+#define WAYRDP_GIT "@WAYRDP_GIT@"

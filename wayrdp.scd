@@ -57,7 +57,9 @@ meaning.
 	write its NT hash to the SAM file and exit.
 
 *-v*
-	Print the version and exit.
+	Print the version and exit: the one set in include/version.h and the
+	commit built, as 0.5.4+DATE.TIME.HASH with its commit time in UTC and
+	.dirty for changes not committed (nothing after the version without git).
 
 # CONFIGURATION
 

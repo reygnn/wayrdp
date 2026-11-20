@@ -164,9 +164,19 @@ configure_file(
 	configuration: config,
 )
 
-executable(
+# The commit built, after the version (include/version.h); written on
+# every build, but only when it changes.
+gitversion = vcs_tag(
+	command: ['sh', meson.current_source_dir() / 'util/gitversion.sh'],
+	input: 'include/gitversion.h.in',
+	output: 'gitversion.h',
+	replace_string: '@WAYRDP_GIT@',
+	fallback: '',
+)
+
+wayrdp_exe = executable(
 	'wayrdp',
-	sources,
+	sources + [gitversion],
 	dependencies: dependencies,
 	include_directories: [inc, include_directories('src')],
 	install: true,
