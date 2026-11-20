@@ -108,6 +108,12 @@ struct wayrdp {
 	uint64_t last_send_time;
 	struct aml_timer* rate_limiter;
 	struct aml_timer* capture_retry_timer;
+	/* FAILED in a row: one is normal (a resize), many say why nothing
+	 * comes. */
+	int capture_failures;
+	/* The pointer capture's, apart: its restart mustn't come from inside
+	 * the capture that failed (its constraints_done). */
+	struct aml_timer* cursor_retry_timer;
 
 	struct observer output_added_observer;
 	struct observer output_removed_observer;
@@ -220,6 +226,15 @@ static void on_capture_retry(struct aml_timer* timer)
 	self->capture_retry_timer = NULL;
 	if (capture_wanted(self))
 		start_capture(self, true);
+}
+
+static void on_cursor_retry(struct aml_timer* timer)
+{
+	struct wayrdp* self = aml_get_userdata(timer);
+	aml_unref(self->cursor_retry_timer);
+	self->cursor_retry_timer = NULL;
+	if (self->capturing && self->cursor_sc)
+		screencopy_start(self->cursor_sc, true);
 }
 
 static void retry_capture(struct wayrdp* self)
@@ -357,9 +372,14 @@ static void on_capture_done(enum screencopy_result result,
 		break;
 	case SCREENCOPY_FAILED:
 		self->capturing = false;
+		if (++self->capture_failures == 10)
+			wv_log(WV_LOG_WARNING, "Capturing fails again and again; still trying");
 		retry_capture(self);
 		break;
 	case SCREENCOPY_DONE:
+		if (self->capture_failures >= 10)
+			wv_log(WV_LOG_INFO, "Capturing works again");
+		self->capture_failures = 0;
 		process_frame(self, buffer);
 		break;
 	}
@@ -392,8 +412,13 @@ static void on_cursor_done(enum screencopy_result result,
 		wv_log(WV_LOG_INFO, "The compositor ended the pointer capture");
 		return;
 	case SCREENCOPY_FAILED:
-		if (self->capturing)
-			screencopy_start(self->cursor_sc, true);
+		/* Later, from the loop: started from here, the restart would
+		 * be undone by the capture that is still on its way out. */
+		if (self->capturing && !self->cursor_retry_timer) {
+			self->cursor_retry_timer = aml_timer_new(100000,
+					on_cursor_retry, self, NULL);
+			aml_start(aml_get_default(), self->cursor_retry_timer);
+		}
 		return;
 	case SCREENCOPY_DONE:
 		break;
@@ -493,6 +518,10 @@ static void init_pointer(struct wayrdp* self)
 	if (self->pointer.pointer)
 		pointer_destroy(&self->pointer);
 	self->pointer.pointer = NULL;
+
+	/* The seat went, wayrdp is on its way out (on_seat_removed). */
+	if (!self->seat)
+		return;
 
 	struct output* output = image_source_is_output(self->image_source)
 		? output_from_image_source(self->image_source) : NULL;
@@ -1109,9 +1138,11 @@ int main(int argc, char* argv[])
 		goto out;
 	}
 	char default_sam[4200], default_crt[4200], default_key[4200];
-	snprintf(default_sam, sizeof(default_sam), "%s/sam", config_dir);
-	snprintf(default_crt, sizeof(default_crt), "%s/tls.crt", config_dir);
-	snprintf(default_key, sizeof(default_key), "%s/tls.key", config_dir);
+	/* Unused without a config directory: the config file names all. */
+	const char* d = config_dir ? config_dir : "";
+	snprintf(default_sam, sizeof(default_sam), "%s/sam", d);
+	snprintf(default_crt, sizeof(default_crt), "%s/tls.crt", d);
+	snprintf(default_key, sizeof(default_key), "%s/tls.key", d);
 	const char* sam_file = self.cfg.sam_file ? self.cfg.sam_file : default_sam;
 
 	if (option_parser_get_value(&parser, "set-password")) {
@@ -1270,6 +1301,10 @@ int main(int argc, char* argv[])
 rdp_failure:
 	detach_wayland(&self);
 wayland_failure:
+	if (self.cursor_retry_timer) {
+		aml_stop(aml, self.cursor_retry_timer);
+		aml_unref(self.cursor_retry_timer);
+	}
 	if (self.capture_retry_timer) {
 		aml_stop(aml, self.capture_retry_timer);
 		aml_unref(self.capture_retry_timer);
