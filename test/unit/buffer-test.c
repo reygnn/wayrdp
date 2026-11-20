@@ -26,9 +26,14 @@
 
 #include "tst.h"
 #include "buffer.h"
+#include "wayland.h"
 
-/* No compositor: wl_shm would be the next thing buffer.c touches. */
-struct wayland* wayland = NULL;
+/* No compositor. buffer.c asserts there is a wl_shm, and after mmap it
+ * would use it: with mmap failing, this one is never touched. */
+static struct wayland fake_wayland = {
+	.wl_shm = (struct wl_shm*)&fake_wayland,
+};
+struct wayland* wayland = &fake_wayland;
 
 static int mmap_fails;
 
