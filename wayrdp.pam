@@ -1,4 +1,8 @@
 # /etc/pam.d/wayrdp: the Linux password, for wayrdp -a pam.
-# wayrdp only checks it; it opens no session.
-@include common-auth
-@include common-account
+#
+# pam_unix only, not common-auth: a login from the network takes the
+# password and nothing else. Modules there that let the user in by
+# presence at the machine (a fingerprint, a security key) must not count
+# for it. wayrdp only checks the password; it opens no session.
+auth     required  pam_unix.so
+account  required  pam_unix.so

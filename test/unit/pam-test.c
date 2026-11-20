@@ -101,6 +101,35 @@ static int test_account(void)
 	return 0;
 }
 
+/* wayrdp.pam as installed: pam_unix alone, nothing included from
+ * common-auth, whose presence modules would count for a remote login. */
+static int test_service_file(void)
+{
+	FILE* f = fopen(WAYRDP_PAM_FILE, "r");
+	ASSERT_TRUE(f != NULL);
+	char line[512];
+	int auth = 0, account = 0, other = 0;
+	while (fgets(line, sizeof(line), f)) {
+		char type[64], control[64], module[256];
+		if (line[0] == '#' || line[0] == '\n')
+			continue;
+		if (sscanf(line, "%63s %63s %255s", type, control, module) != 3
+				|| strcmp(module, "pam_unix.so") != 0)
+			++other;
+		else if (strcmp(type, "auth") == 0)
+			++auth;
+		else if (strcmp(type, "account") == 0)
+			++account;
+		else
+			++other;
+	}
+	fclose(f);
+	ASSERT_INT_EQ(1, auth);
+	ASSERT_INT_EQ(1, account);
+	ASSERT_INT_EQ(0, other);
+	return 0;
+}
+
 static void cleanup(void)
 {
 	const char* names[] = { "wayrdp", "dump.sh", "dump" };
@@ -135,5 +164,6 @@ int main(void)
 	RUN_TEST(test_items);
 	RUN_TEST(test_refused);
 	RUN_TEST(test_account);
+	RUN_TEST(test_service_file);
 	return r;
 }

@@ -80,7 +80,10 @@ Options on the command line win.
 	logged.
 
 */etc/pam.d/wayrdp*
-	The PAM service for *-a pam*.
+	The PAM service for *-a pam*: pam_unix alone, the password and nothing
+	else. Not common-auth, whose modules for presence at the machine (a
+	fingerprint, a security key) must not count for a login from the
+	network. PAM gets the client's address as PAM_RHOST.
 
 # ENVIRONMENT
 

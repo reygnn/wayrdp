@@ -138,7 +138,7 @@ clipboard, tick it under Local Resources.
 | `-a` | How | For | Against |
 |---|---|---|---|
 | `nla` (default) | CredSSP/NTLM against the SAM file from `--set-password` | mstsc's default; no login screen needed | a password of its own; the file holds an unsalted NT hash |
-| `pam` | TLS only; the credentials mstsc sends along are checked with PAM (service `wayrdp`) | the Linux password, as with xrdp | mstsc warns about the missing NLA; it must have the credentials saved, or the connection is refused: wayrdp has no login screen |
+| `pam` | TLS only; the credentials mstsc sends along are checked with PAM (service `wayrdp`: `pam_unix` alone) | the Linux password, as with xrdp | mstsc warns about the missing NLA; it must have the credentials saved, or the connection is refused: wayrdp has no login screen |
 
 For `-a pam`, remove `NoNewPrivileges=yes` from the service: PAM checks the password
 with the setgid helper `unix_chkpwd`.

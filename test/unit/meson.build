@@ -29,13 +29,16 @@ if libpam.found()
 endif
 # Only what cannot be made real: a failing mmap.
 wrap = {'buffer': ['-Wl,--wrap=mmap64']}
+# The PAM service file shipped.
+defines = {'pam': ['-DWAYRDP_PAM_FILE="@0@"'.format(
+	meson.project_source_root() / 'wayrdp.pam')]}
 
 foreach name, u : units
 	test(name, executable(name,
 		[name + '-test.c'] + u[0],
 		include_directories: u[1],
 		dependencies: u[2],
-		c_args: san,
+		c_args: san + defines.get(name, []),
 		link_args: san + wrap.get(name, []),
 	))
 endforeach
