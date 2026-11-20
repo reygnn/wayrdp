@@ -16,7 +16,7 @@ WAYRDP=${1:-build/wayrdp}
 MWC=${MWC:-mwc}
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 [ -e /etc/pam.d/wayrdp ] || { echo "SKIP: no /etc/pam.d/wayrdp"; exit 77; }
-for tool in xfreerdp3 Xwayland; do
+for tool in sdl-freerdp3; do
 	command -v $tool >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
 
@@ -81,13 +81,13 @@ start_wayrdp() {	# start_wayrdp <port> <log>
 }
 
 USER_NAME=$(id -un)
-# client <name> <port>: xfreerdp3 with a wrong password, in its own mwc
+# client <name> <port>: sdl-freerdp3 with a wrong password, in its own mwc
 client() {
-	start_mwc "$1" "xfreerdp3 /v:127.0.0.1:$2 /sec:tls /cert:ignore /size:1024x768 /u:$USER_NAME /p:wrong-$1 /t:$1 /log-level:WARN >$dir/client-$1.log 2>&1"
+	start_mwc "$1" "sdl-freerdp3 /v:127.0.0.1:$2 /sec:tls /cert:ignore /size:1024x768 /u:$USER_NAME /p:wrong-$1 /t:$1 /log-level:WARN >$dir/client-$1.log 2>&1"
 }
 # hang_up <name>: the client goes, its socket closes (by its title: FreeRDP
 # blanks the password in its argv)
-hang_up() { pkill -KILL -f "^xfreerdp3 .*/t:$1 " 2>/dev/null; }
+hang_up() { pkill -KILL -f "^sdl-freerdp3 .*/t:$1 " 2>/dev/null; }
 
 start_mwc a "foot sh -c 'while :; do date +%T; sleep 1; done'"
 mkdir -p "$dir/cfg"
@@ -119,7 +119,7 @@ start_wayrdp "$PORT2" "$dir/wayrdp2.log"
 # is answered.
 cmd=
 for n in 1 2 3 4; do
-	cmd+="xfreerdp3 /v:127.0.0.1:$PORT2 /sec:tls /cert:ignore /size:1024x768 /u:$USER_NAME /p:wrong-q$n /t:q$n /log-level:WARN >$dir/client-q$n.log 2>&1 & "
+	cmd+="sdl-freerdp3 /v:127.0.0.1:$PORT2 /sec:tls /cert:ignore /size:1024x768 /u:$USER_NAME /p:wrong-q$n /t:q$n /log-level:WARN >$dir/client-q$n.log 2>&1 & "
 done
 start_mwc q "sh -c '$cmd wait'"
 wait_count "client wants" 4 "the four clients sent no credentials" "$dir/wayrdp2.log"

@@ -16,7 +16,7 @@ MWC=${MWC:-mwc}
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 [ -n "${PAM_PASSWORD:-}" ] || { echo "SKIP: set PAM_PASSWORD"; exit 77; }
 [ -e /etc/pam.d/wayrdp ] || { echo "SKIP: no /etc/pam.d/wayrdp"; exit 77; }
-for tool in foot xfreerdp3 grim python3; do
+for tool in foot sdl-freerdp3 grim python3; do
 	command -v $tool >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
 
@@ -82,10 +82,10 @@ wait_log "Listening on" "wayrdp doesn't listen"
 echo "ok: wayrdp -a pam listens on $PORT, without a SAM file"
 
 USER_NAME=$(id -un)
-client() {	# client <mwc> <args…>: xfreerdp3 over TLS in a new mwc
+client() {	# client <mwc> <args…>: sdl-freerdp3 over TLS in a new mwc
 	local name=$1; shift
 	start_mwc "$name" '#000000' \
-		"xfreerdp3 /v:127.0.0.1:$PORT /sec:tls /cert:ignore /size:1024x768 $* /log-level:WARN >$dir/client-$name.log 2>&1"
+		"sdl-freerdp3 /v:127.0.0.1:$PORT /sec:tls /cert:ignore /size:1024x768 $* /log-level:WARN >$dir/client-$name.log 2>&1"
 }
 
 # The right password: the picture.
@@ -121,7 +121,7 @@ sleep 1
 [ "$(grep -c "active, " "$dir/wayrdp.log")" = "$n_active" ] || fail "a wrong password got a session"
 echo "ok: a wrong password is refused"
 
-# An empty password sent along (xfreerdp3 without /p would ask on the
+# An empty password sent along (sdl-freerdp3 without /p would ask on the
 # terminal): refused, there is no login screen.
 client c /u:$USER_NAME /p:
 wait_log "no credentials sent along" "a client without credentials wasn't refused"

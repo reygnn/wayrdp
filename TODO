@@ -161,11 +161,17 @@ mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
 * Bekannte Eigenheiten der Test-Clients (für test/mwc-rdp.sh, nicht wayrdp)
   - wlfreerdp3: deprecated; hängt ab und zu, sobald Zeigerbilder kommen;
     seine Zwischenablage macht aus Text \u-Escapes; stürzt beim Trennen ab.
-  - sdl-freerdp3 (Standard für die Eingabe): SDL3 nimmt Wayland nur, wenn
-    der Compositor wp_fifo_v1 anbietet, sonst Xwayland, und dort ging das
-    erste Rad-Ereignis verloren. mwc hat wp_fifo_v1 seit d48c2b9
-    (2026-11-11); der Test braucht ein mwc ab diesem Stand.
-  - xfreerdp3 unter Xwayland in mwc: gibt den Zeiger einmal weiter, danach
-    nicht mehr; bietet RemoteFX auch mit -rfx an (deshalb
-    WAYRDP_FORCE_PLANAR=1 für den Planar-Test); behält bei DesktopResize
-    seine Fenstergröße.
+  - sdl-freerdp3 (der Client mit Fenster in allen Tests): SDL3 nimmt
+    Wayland nur, wenn der Compositor wp_fifo_v1 anbietet, sonst Xwayland,
+    und dort ging das erste Rad-Ereignis verloren. mwc hat wp_fifo_v1 seit
+    d48c2b9 (2026-11-11); die Tests brauchen ein mwc ab diesem Stand.
+    Schreibt einen Text von rund 200 kB aus der Zwischenablage mit
+    \u-Escapes und einem NUL am Ende (kleine Texte nicht); der große Text in
+    test/mwc-rdp.sh ist deshalb ASCII. Setzt die Auswahl nur mit Fokus und
+    dem Serial eines frischen Eingabe-Ereignisses (Wayland, kein Fehler):
+    die Tests drücken dafür Shift über test/vinput.
+  - xfreerdp3: nur noch für +auth-only (ohne Display). mwc hat seit
+    9474172 (2026-11-20) kein Xwayland mehr; unter Xwayland gab xfreerdp3
+    den Zeiger nur einmal weiter und behielt bei DesktopResize seine
+    Fenstergröße. Bietet RemoteFX auch mit -rfx an (deshalb
+    WAYRDP_FORCE_PLANAR=1 für den Planar-Test).

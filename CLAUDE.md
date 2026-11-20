@@ -36,8 +36,8 @@ tests need mwc d48c2b9 or later (`wp_fifo_v1`).
 ## Rules
 
 - No workarounds for wlroots or FreeRDP bugs fixed upstream; wayrdp waits for the
-  release. Bugs in the test clients (wlfreerdp3, xfreerdp3 under Xwayland) are noted in
-  TODO, not worked around in wayrdp.
+  release. Bugs in the test clients (sdl-freerdp3, wlfreerdp3) are noted in TODO, not
+  worked around in wayrdp.
 - Nothing else may use wlr-output-management beside wayrdp (wlroots 0.19 and 0.20
   abort in `head_send_state` with a second client); tests and docs must not suggest
   wlr-randr, kanshi or wdisplays for a running session.

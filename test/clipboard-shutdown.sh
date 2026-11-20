@@ -3,20 +3,22 @@
 # read's callback must not touch the RDP server after it is freed.
 #
 #  - mwc "A" headless with wayrdp under valgrind
-#  - mwc "C" runs xfreerdp3 (through Xwayland, for its clipboard)
+#  - mwc "C" runs sdl-freerdp3; Shift pressed in C (test/vinput) lets it
+#    take the selection
 #  - wl-copy in A owns the selection and is stopped (SIGSTOP), so it never
 #    answers; wl-paste in C makes the client ask for the session clipboard
 #  - wayrdp gets SIGTERM while the read waits; valgrind must find nothing
 #
 #   MWC=/path/to/mwc test/clipboard-shutdown.sh [build/wayrdp]
 #
-# Needs mwc, xfreerdp3, wl-clipboard and valgrind (all in the box).
+# Needs mwc, sdl-freerdp3, wl-clipboard and valgrind (all in the box), and
+# build/test/vinput.
 set -u
 
 WAYRDP=${1:-build/wayrdp}
 MWC=${MWC:-mwc}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-for tool in "$MWC" xfreerdp3 wl-copy wl-paste valgrind; do
+for tool in "$MWC" sdl-freerdp3 wl-copy wl-paste valgrind; do
 	command -v "$tool" >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
 [ -x "$WAYRDP" ] || { echo "FAIL: $WAYRDP not built"; exit 1; }
@@ -78,13 +80,27 @@ done
 grep -q "Listening on" "$dir/wayrdp.log" || fail "wayrdp doesn't listen"
 
 start_mwc c 1400x1000 \
-	"xfreerdp3 /v:127.0.0.1:$PORT /u:$(id -un) /p:$PASSWORD /cert:ignore /size:1024x768 /log-level:OFF >$dir/client.log 2>&1"
+	"sdl-freerdp3 /v:127.0.0.1:$PORT /u:$(id -un) /p:$PASSWORD /cert:ignore /size:1024x768 /log-level:OFF >$dir/client.log 2>&1"
 for ((i = 0; i < 150; i++)); do
 	grep -q "clipboard channel open" "$dir/wayrdp.log" && break
 	sleep 0.2
 done
 grep -q "clipboard channel open" "$dir/wayrdp.log" || fail "no clipboard channel"
 sleep 2
+
+# The client in C takes the selection only with keyboard focus and the
+# serial of a fresh input event: Shift, from a keyboard C doesn't have
+# otherwise, kept until the end.
+VINPUT=$(dirname "$WAYRDP")/test/vinput
+[ -x "$VINPUT" ] || fail "$VINPUT not built"
+{ printf 'key 42 1\nkey 42 0\n'; sleep 60; } | XDG_RUNTIME_DIR=$dir/c/run \
+	WAYLAND_DISPLAY=wayland-0 "$VINPUT" 1400 1000 >"$dir/vinput.out" 2>"$dir/vinput.log" &
+pids+=($!)
+for ((i = 0; i < 25; i++)); do
+	[ "$(grep -c '^ok$' "$dir/vinput.out")" = 2 ] && break
+	sleep 0.2
+done
+[ "$(grep -c '^ok$' "$dir/vinput.out")" = 2 ] || fail "vinput in C"
 
 # A selection owner in the session that never answers.
 XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 wl-copy --foreground -- "stuck" &
