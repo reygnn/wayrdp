@@ -21,6 +21,7 @@
 
 #include "output.h"
 #include "output-management.h"
+#include "wayland.h"
 
 #include "wlr-output-management-unstable-v1.h"
 
@@ -39,6 +40,18 @@ struct output_manager_head {
 
 static struct wl_list heads;
 static uint32_t last_config_serial;
+
+extern struct wayland* wayland;
+
+/* The last size asked for: a cancelled configuration (the output changed
+ * in the meantime) is sent again once with the next serial. */
+static struct {
+	char* output;
+	uint16_t width, height;
+	bool again;
+	/* Sent again already: once only. */
+	bool retried;
+} request;
 static struct zwlr_output_manager_v1* wlr_output_manager;
 
 /* single head properties */
@@ -197,8 +210,11 @@ static void output_manager_config_failed(void* data,
 static void output_manager_config_cancelled(void* data,
 		struct zwlr_output_configuration_v1* config)
 {
-	wv_trace("config request cancelled");
+	/* Outdated: the outputs changed before it came. The next done brings
+	 * the serial to ask again with. */
+	wv_log(WV_LOG_DEBUG, "Output configuration cancelled; asking again");
 	zwlr_output_configuration_v1_destroy(config);
+	request.again = request.output != NULL && !request.retried;
 }
 
 struct zwlr_output_configuration_v1_listener wlr_output_config_listener = {
@@ -213,6 +229,17 @@ static void output_manager_done(void* data,
 		uint32_t serial)
 {
 	last_config_serial = serial;
+
+	if (request.again) {
+		request.again = false;
+		struct output* output = wayland
+			? output_find_by_name(&wayland->outputs, request.output) : NULL;
+		if (!output || !wlr_output_manager_resize_output(output,
+					request.width, request.height))
+			wv_log(WV_LOG_WARNING, "The output size %ux%u can't be asked for again",
+					request.width, request.height);
+		request.retried = true;
+	}
 	wv_trace("Got new serial: %u", serial);
 }
 
@@ -280,6 +307,9 @@ void wlr_output_manager_destroy(void)
 	wlr_output_manager = NULL;
 
 	last_config_serial = 0;
+	free(request.output);
+	request.output = NULL;
+	request.again = false;
 }
 
 struct zwlr_output_configuration_v1* wlr_output_manager_start_config(void)
@@ -370,6 +400,14 @@ bool wlr_output_manager_configure_output(
 bool wlr_output_manager_resize_output(struct output* output,
 		uint16_t width, uint16_t height)
 {
+	if (!request.output || strcmp(request.output, output_get_name(output)) != 0) {
+		free(request.output);
+		request.output = strdup(output_get_name(output));
+	}
+	request.width = width;
+	request.height = height;
+	request.retried = false;
+
 	struct zwlr_output_configuration_v1* config =
 		wlr_output_manager_start_config();
 	if (!config)
