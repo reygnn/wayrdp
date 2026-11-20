@@ -620,6 +620,13 @@ static void on_selection_changed(void* userdata, bool has_text)
 		rdp_server_clipboard_changed(self->rdp, has_text);
 }
 
+static void on_own_selection(void* userdata)
+{
+	struct wayrdp* self = userdata;
+	if (self->rdp)
+		rdp_server_clipboard_own(self->rdp);
+}
+
 static void on_paste(void* userdata, int fd)
 {
 	struct wayrdp* self = userdata;
@@ -631,6 +638,7 @@ static void on_paste(void* userdata, int fd)
 
 static const struct data_control_callbacks data_control_callbacks = {
 	.on_selection_changed = on_selection_changed,
+	.on_own_selection = on_own_selection,
 	.on_paste = on_paste,
 };
 

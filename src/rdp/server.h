@@ -119,6 +119,9 @@ void rdp_server_set_cursor_visible(struct rdp_server* self, bool visible);
 
 /* The session's clipboard changed: text in it, or not. */
 void rdp_server_clipboard_changed(struct rdp_server* self, bool has_text);
+/* wayrdp's own selection is the session's: no text of the session's own
+ * for the next client. The active one has it already, it isn't told. */
+void rdp_server_clipboard_own(struct rdp_server* self);
 
 /* A program in the session pastes the client's text: the server writes it
  * to fd as UTF-8 and closes it. */

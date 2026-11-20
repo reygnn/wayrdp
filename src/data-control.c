@@ -209,6 +209,8 @@ static void on_selection(struct data_control* self, void* proxy)
 		/* wayrdp's own: the client has that text already. */
 		offer_free(offer);
 		self->has_text = false;
+		if (self->callbacks->on_own_selection)
+			self->callbacks->on_own_selection(self->userdata);
 		return;
 	}
 

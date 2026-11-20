@@ -12,7 +12,8 @@
 #    on wayrdp's side (-k de).
 #  - mwc "C" runs sdl-freerdp3, which replaces B's session, with a keyboard
 #    from test/vinput; wl-copy in one, wl-paste in the other, both ways,
-#    Unicode and several lines, 228 kB and 9 MB from the session; no echo.
+#    Unicode and several lines, 228 kB and 9 MB from the session; no echo;
+#    mwc "F" replaces C, and C's text in the session goes with it.
 #  - a pointer image goes to the client.
 #  - mwc "D" runs sdl-freerdp3 /f /dynamic-resolution on a 901x700 output:
 #    A's output becomes 900x700 (even width) and keeps its place in the
@@ -486,6 +487,30 @@ sleep 1
 [ "$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")" = "$n" ] \
 	|| fail "the clipboard echoes"
 echo "ok: no clipboard echo"
+
+# C copies, so the session's selection is wayrdp's own with C's text; F
+# replaces C. That text goes with C: the session has no selection left,
+# and F isn't told of text it couldn't get.
+wl_copy c "von C, bald weg"
+expect_paste a "von C, bald weg" "C's text in the session"
+n_told=$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")
+n_active=$(grep -c "active, 1024x768" "$dir/wayrdp.log")
+start_mwc f 1400x1000 '#000000' \
+	"sdl-freerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:1024x768 /log-level:OFF >$dir/client-f.log 2>&1"
+for ((i = 0; i < 150; i++)); do
+	[ "$(grep -c "active, 1024x768" "$dir/wayrdp.log")" -gt $n_active ] && break
+	sleep 0.2
+done
+[ "$(grep -c "active, 1024x768" "$dir/wayrdp.log")" -gt $n_active ] || fail "F never became active"
+for ((i = 0; i < 25; i++)); do
+	XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 wl-paste -l >/dev/null 2>&1 || break
+	sleep 0.2
+done
+XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 wl-paste -l >/dev/null 2>&1 \
+	&& fail "C's text stayed in the session after F replaced C"
+[ "$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")" = "$n_told" ] \
+	|| fail "F was told the session clipboard has text"
+echo "ok: a client's text in the session goes with it"
 
 # The pointer image goes to the client (an arrow at least), unless it is
 # drawn into the picture (-r).

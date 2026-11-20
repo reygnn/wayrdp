@@ -230,8 +230,13 @@ void rdp_server_peer_logged_on(struct rdp_server* self, struct rdp_peer* peer)
 
 	/* One connection at a time: the new one takes over, as when mstsc
 	 * reconnects. Only now, so a failed login can't throw anyone out. */
-	if (self->active && self->active != peer)
+	if (self->active && self->active != peer) {
 		rdp_input_release(self->active);
+		/* Its text in the session (wayrdp's own selection) goes with it:
+		 * no one could serve a paste of it any more. */
+		if (self->active->client_has_text && self->config.clipboard)
+			self->config.clipboard->withdraw(self->config.userdata);
+	}
 
 	struct rdp_peer* other;
 	LIST_FOREACH(other, &self->peers, link) {
@@ -563,6 +568,11 @@ void rdp_server_clipboard_changed(struct rdp_server* self, bool has_text)
 	self->session_has_text = has_text;
 	if (self->active)
 		rdp_clipboard_announce(self->active);
+}
+
+void rdp_server_clipboard_own(struct rdp_server* self)
+{
+	self->session_has_text = false;
 }
 
 void rdp_server_clipboard_paste(struct rdp_server* self, int fd)

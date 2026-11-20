@@ -45,6 +45,9 @@ struct data_control_callbacks {
 	/* The session's clipboard changed: it has text now, or not. Not for
 	 * wayrdp's own selection. */
 	void (*on_selection_changed)(void* userdata, bool has_text);
+	/* wayrdp's own selection is the session's now: the text is the
+	 * client's, the session has none of its own. */
+	void (*on_own_selection)(void* userdata);
 	/* A program pastes wayrdp's own selection: write UTF-8 text to fd
 	 * and close it. */
 	void (*on_paste)(void* userdata, int fd);
