@@ -68,9 +68,33 @@ static int test_mmap_fails(void)
 	return 0;
 }
 
+/* Modifiers that differ only past the first byte are another config: the
+ * pool takes the new ones. */
+static int test_modifiers(void)
+{
+	uint64_t a[] = { 1, 2 }, b[] = { 1, 3 };
+	struct wv_buffer_config config = {
+		.type = WV_BUFFER_SHM,
+		.width = 64,
+		.height = 64,
+		.stride = 256,
+		.format = DRM_FORMAT_XRGB8888,
+		.n_modifiers = 2,
+		.modifiers = a,
+	};
+	struct wv_buffer_pool* pool = wv_buffer_pool_create(&config);
+	ASSERT_TRUE(pool != NULL);
+	config.modifiers = b;
+	wv_buffer_pool_reconfig(pool, &config);
+	ASSERT_TRUE(pool->config.modifiers[1] == 3);
+	wv_buffer_pool_destroy(pool);
+	return 0;
+}
+
 int main(void)
 {
 	int r = 0;
 	RUN_TEST(test_mmap_fails);
+	RUN_TEST(test_modifiers);
 	return r;
 }

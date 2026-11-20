@@ -56,7 +56,7 @@ static bool modifiers_match(const uint64_t* a, int a_len, const uint64_t* b,
 {
 	if (a_len != b_len)
 		return false;
-	return a_len == 0 || memcmp(a, b, a_len) == 0;
+	return a_len == 0 || memcmp(a, b, a_len * sizeof(*a)) == 0;
 }
 
 static bool buffer_configs_match(const struct wv_buffer_config* a,
