@@ -16,6 +16,7 @@ units = {
 	'planar': [['../../src/rdp/encoder.c'], [inc, root_inc],
 		[freerdp, winpr, pixman]],
 	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
+	'intset': [['../../src/intset.c'], inc, []],
 }
 
 foreach name, u : units

@@ -48,7 +48,8 @@ static int intset__grow(struct intset*  self)
 {
 	size_t new_cap = self->cap * 2;
 
-	int32_t* new_storage = realloc(self->storage, new_cap);
+	int32_t* new_storage = realloc(self->storage,
+			new_cap * sizeof(*self->storage));
 	if (!new_storage)
 		return -1;
 
