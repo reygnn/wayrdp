@@ -17,7 +17,12 @@ units = {
 		[freerdp, winpr, pixman]],
 	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
 	'intset': [['../../src/intset.c'], inc, []],
+	'buffer': [['../../src/buffer.c', '../../src/shm.c', '../../src/log.c',
+		'../../src/pixels.c', '../../src/util.c', '../../src/strlcpy.c'],
+		[inc, root_inc], [wayland_client, client_protos, pixman, drm]],
 }
+# Only what cannot be made real: a failing mmap.
+wrap = {'buffer': ['-Wl,--wrap=mmap64']}
 
 foreach name, u : units
 	test(name, executable(name,
@@ -25,6 +30,6 @@ foreach name, u : units
 		include_directories: u[1],
 		dependencies: u[2],
 		c_args: san,
-		link_args: san,
+		link_args: san + wrap.get(name, []),
 	))
 endforeach

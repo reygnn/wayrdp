@@ -141,7 +141,7 @@ static struct wv_buffer* wv_buffer_create_shm(
 
 	self->pixels = mmap(NULL, self->size, PROT_READ | PROT_WRITE,
 			MAP_SHARED, fd, 0);
-	if (!self->pixels)
+	if (self->pixels == MAP_FAILED)
 		goto mmap_failure;
 
 	struct wl_shm_pool* pool = wl_shm_create_pool(wayland->wl_shm, fd,
@@ -168,6 +168,7 @@ static struct wv_buffer* wv_buffer_create_shm(
 
 shm_failure:
 pool_failure:
+	munmap(self->pixels, self->size);
 mmap_failure:
 	close(fd);
 failure:
