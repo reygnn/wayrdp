@@ -37,6 +37,8 @@ cleanup() {
 			fi
 		done 2>/dev/null <"$p/environ"
 	done
+	# The client arguments hold the password: gone even with KEEP.
+	rm -f "$dir"/*.args
 	if [ "${KEEP:-}" ]; then echo "logs kept in $dir"; else rm -rf "$dir"; fi
 }
 trap cleanup EXIT

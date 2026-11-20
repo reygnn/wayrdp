@@ -20,9 +20,12 @@ Testaufbau zuhause (nicht im Repo):
   dann "New Remote Desktop" auf 127.0.0.1; oder mstsc direkt über eine
   Bitvise-C2S-Regel 127.0.0.1:13389 -> localhost:3389 (Benutzer "user").
   Ohne VM: Remmina in der Box (distrobox.ini), Server 127.0.0.1:3389.
-Automatische Tests: README unter "Testing", CLAUDE.md (test/mwc-rdp.sh,
-test/pam-rdp.sh, meson test). mwc dafür aus einer Kopie bauen, nicht im
-mwc-Repo (git archive HEAD | tar -x, dann make mwc in der Box).
+Automatische Tests: README unter "Testing", CLAUDE.md (make test, make e2e).
+Sie nehmen das auf dem Host installierte mwc und brechen ab, wenn es älter
+ist als main im mwc-Repo (test/mwc.sh). Ein anderes mwc mit MWC=…, gebaut
+aus einer Kopie, nicht im mwc-Repo (git archive main | tar -x, dann make mwc
+in der Box). pam-rdp braucht ein Passwort des Benutzers in der Box (sudo
+passwd $USER dort), mit read -rs eingelesen und exportiert.
 
 
 * GFX-Pipeline, Stufe 1 auf main (2026-11-11): src/rdp/gfx.c, RemoteFX

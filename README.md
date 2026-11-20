@@ -188,8 +188,13 @@ make                                    # release build in build/
 make test                               # unit tests
 make e2e                                # every script in test/, one after another
 make e2e-mwc-rdp                        # one of them, here -a nla
-make e2e-pam-rdp PAM_PASSWORD=…         # end to end, -a pam
+read -rs PAM_PASSWORD; export PAM_PASSWORD
+make e2e-pam-rdp                        # end to end, -a pam
 ```
+
+`pam-rdp` needs a password of the user in the box: PAM there checks the box's own
+`/etc/shadow` (`sudo passwd $USER` in the box). Give it through the environment, as
+above: on make's command line it would show in `ps`.
 
 The scripts run the mwc installed on the host (`/run/host/usr/local/bin/mwc` in the box),
 or `MWC=/path/to/mwc`. It must be the newest: a version older than the one on `main` in
