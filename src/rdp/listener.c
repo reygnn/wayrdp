@@ -43,14 +43,13 @@ static BOOL check_accept(freerdp_listener* listener)
 		return FALSE;
 	}
 
-	int pending = 0;
+	/* Every PAM check counts, also one whose client hung up, and every
+	 * connection waiting for its logon without one. */
+	int pending = self->pam_jobs;
 	struct rdp_peer* peer;
 	LIST_FOREACH(peer, &self->peers, link)
-		if (!peer->logged_on && !peer->closing)
+		if (!peer->logged_on && !peer->closing && !peer->pam_pending)
 			++pending;
-	/* PAM checks go on after their client hung up. */
-	if (pending < self->pam_jobs)
-		pending = self->pam_jobs;
 	if (pending >= MAX_PENDING) {
 		wv_log(WV_LOG_WARNING, "Connection refused: %d are logging on already",
 				pending);

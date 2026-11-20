@@ -7,8 +7,9 @@
 # Needs /etc/pam.d/wayrdp, but not the password: every guess is wrong.
 # Checks: three wrong passwords whose clients hung up before PAM answered
 # still lock new connections out; and checks that go on after their client
-# left count toward the four that may wait at a time (pam_unix delays a
-# failure by about two seconds, so they pile up). WAYRDP_WRAP goes in front
+# left count toward the four that may wait at a time, added to the
+# connections waiting themselves (pam_unix delays a failure by about two
+# seconds, so they pile up). WAYRDP_WRAP goes in front
 # of wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
@@ -111,22 +112,36 @@ wait_count "Connection refused: locked" 1 "no lockout after three guesses whose 
 exec 3>&-
 echo "ok: their guesses count, locked out"
 
-# Checks whose clients left still wait for the worker: four at most. A
-# fresh wayrdp, the one above is locked out.
+# Checks whose clients left still wait for the worker and count toward
+# the four, beside connections that wait for their own. A fresh wayrdp,
+# the one above is locked out. Three at once in one mwc, so all three
+# checks are queued before the first is answered (the one worker takes
+# about two seconds a check).
 PORT2=$((PORT + 1))
 start_wayrdp "$PORT2" "$dir/wayrdp2.log"
-# Four at once in one mwc, so all four checks are queued before the first
-# is answered.
 cmd=
-for n in 1 2 3 4; do
+for n in 1 2 3; do
 	cmd+="sdl-freerdp3 /v:127.0.0.1:$PORT2 /sec:tls /cert:ignore /size:1024x768 /u:$USER_NAME /p:wrong-q$n /t:q$n /log-level:WARN >$dir/client-q$n.log 2>&1 & "
 done
 start_mwc q "sh -c '$cmd wait'"
-wait_count "client wants" 4 "the four clients sent no credentials" "$dir/wayrdp2.log"
-for n in 1 2 3 4; do hang_up q$n; done
+wait_count "client wants" 3 "the three clients sent no credentials" "$dir/wayrdp2.log"
+for n in 1 2 3; do hang_up q$n; done
+# Gone for wayrdp too, not only killed: else they would count as waiting
+# connections themselves.
+wait_count "Connection from .* closed" 3 "wayrdp didn't see the three go" "$dir/wayrdp2.log"
+# Three checks and one waiting connection make four: a fifth is refused.
 exec 3<>/dev/tcp/127.0.0.1/$PORT2
+for ((i = 0; i < 20; i++)); do
+	[ "$(count "Connection from [0-9.]*$" "$dir/wayrdp2.log")" -ge 4 ] && break
+	sleep 0.1
+done
+[ "$(count "Connection from [0-9.]*$" "$dir/wayrdp2.log")" -ge 4 ] \
+	|| fail "the fourth connection wasn't accepted beside three checks"
+exec 4<>/dev/tcp/127.0.0.1/$PORT2
 wait_count "Connection refused: 4 are logging on already" 1 \
-	"a fifth connection wasn't refused while four checks waited" "$dir/wayrdp2.log"
-exec 3>&-
-echo "ok: checks of clients that left count toward the four"
+	"a fifth connection wasn't refused beside three checks and one waiting" "$dir/wayrdp2.log"
+exec 3>&- 4>&-
+[ "$(count "PAM: Authentication failure" "$dir/wayrdp2.log")" = 0 ] \
+	|| fail "a check was answered before the fifth came; the test needs all three waiting"
+echo "ok: checks of clients that left count toward the four, beside waiting connections"
 echo "PASS"
