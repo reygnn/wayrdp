@@ -16,7 +16,7 @@ release with `--sysconfdir=/etc` by default; see its header):
 | Command | |
 |---|---|
 | `meson setup build && ninja -C build` | wayrdp, `build/test/vinput` |
-| `meson test -C build` | unit tests in `test/unit/` |
+| `meson test -C build` | unit tests in `test/unit/`, `test/version.sh` (`-v`) |
 | `test/mwc-rdp.sh` | end to end against a headless mwc, `-a nla` |
 | `PAM_PASSWORD=… test/pam-rdp.sh` | end to end, `-a pam`; needs `/etc/pam.d/wayrdp` |
 | `test/pam-hangup.sh` | `-a pam`, clients that hang up during the check; needs `/etc/pam.d/wayrdp`, no password |
@@ -29,8 +29,8 @@ Each script's header lists what it checks and its variables (`CLIENT`, `EXPECT_C
 `WAYRDP_WRAP`, …).
 
 wayrdp is tested against the newest mwc. The tests run the one installed on the host,
-`/run/host/usr/local/bin/mwc` in the box, and fail when its version is older than the
-one on `main` in `../mwc` (`test/mwc.sh`; `MWC_REPO` for another place). `MWC=…` picks
+`/run/host/usr/local/bin/mwc` in the box, and fail unless `mwc -v` names a commit that is
+`main` in `../mwc` or after it (`test/mwc.sh`; `MWC_REPO` for another place). `MWC=…` picks
 another: one built from a copy, not inside the mwc repository
 (`git -C ../mwc archive main | tar -x -C <dir>`, then `make mwc` there in the box).
 

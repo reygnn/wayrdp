@@ -167,7 +167,8 @@ the design and review the changes; Claude writes most of the code and the tests.
 checks:
 
 * `meson test` pins the scancode table, the wheel, UTF-8/UTF-16 with CRLF, the size
-  limits, the pointer conversion, the flow control and the Planar encoder.
+  limits, the pointer conversion, the flow control, the Planar encoder, the buffers and
+  `-v`, under ASan and UBSan.
 * The scripts in `test/` run wayrdp against a headless mwc with real FreeRDP clients in
   further headless mwc instances: login with right and wrong passwords, the picture in a
   screenshot, typing and clicking through a simulated keyboard and mouse, the clipboard
@@ -197,8 +198,9 @@ make e2e-pam-rdp                        # end to end, -a pam
 above: on make's command line it would show in `ps`.
 
 The scripts run the mwc installed on the host (`/run/host/usr/local/bin/mwc` in the box),
-or `MWC=/path/to/mwc`. It must be the newest: a version older than the one on `main` in
-the mwc repository (`../mwc`, or `MWC_REPO`) fails the test.
+or `MWC=/path/to/mwc`. It must be the newest: built from `main` in the mwc repository
+(`../mwc`, or `MWC_REPO`) or a later commit, as `mwc -v` names it; an older one, or one
+that doesn't name its commit, fails the test.
 
 `make BUILDDIR=build-debug BUILDTYPE=debug` keeps wayrdp's asserts; the tests then take
 the same `BUILDDIR`. The scripts can also be run directly, `test/mwc-rdp.sh`. Besides
