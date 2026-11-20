@@ -119,6 +119,12 @@ timeout 5 xfreerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:"$PASSWORD" /cert:ignore
 echo "ok: a new login got in after $(($(date +%s) - start)) s"
 # Gone either way: replaced by the login, or closed before by the kernel
 # (TCP_USER_TIMEOUT also ends a connection whose window stays at zero).
+# The login's takeover comes when the main loop takes it over from its
+# thread, which may be just after the client is through.
+for ((i = 0; i < 50; i++)); do
+	grep -q "New connection replaces\|disconnected after" "$dir/wayrdp.log" && break
+	sleep 0.1
+done
 if grep -q "New connection replaces" "$dir/wayrdp.log"; then
 	echo "ok: it replaced the stuck client"
 elif grep -q "disconnected after" "$dir/wayrdp.log"; then
