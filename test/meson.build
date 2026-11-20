@@ -1,5 +1,8 @@
 subdir('unit')
 
+# Configuration and options, before wayrdp connects anywhere.
+test('config', find_program('config.sh'), args: [wayrdp_exe])
+
 # wayrdp --set-password, from a pipe.
 test('set-password', find_program('set-password.sh'), args: [wayrdp_exe])
 

@@ -68,6 +68,7 @@
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define DEFAULT_PORT 3389
 #define DEFAULT_MAX_RATE 30
+#define MAX_RATE 1000
 
 struct wayrdp {
 	bool do_exit;
@@ -1083,14 +1084,19 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
+	/* The password database, certificate and key: in the config directory,
+	 * unless the config file names them. Not in the current directory
+	 * when there is none (no HOME). */
 	const char* config_dir = rdp_config_dir();
+	if (!config_dir && (!self.cfg.sam_file || !self.cfg.certificate_file
+				|| !self.cfg.private_key_file)) {
+		wv_log(WV_LOG_ERROR, "No config directory (is HOME set?): name sam_file, certificate_file and private_key_file in the config file");
+		goto out;
+	}
 	char default_sam[4200], default_crt[4200], default_key[4200];
-	snprintf(default_sam, sizeof(default_sam), "%s/sam",
-			config_dir ? config_dir : ".");
-	snprintf(default_crt, sizeof(default_crt), "%s/tls.crt",
-			config_dir ? config_dir : ".");
-	snprintf(default_key, sizeof(default_key), "%s/tls.key",
-			config_dir ? config_dir : ".");
+	snprintf(default_sam, sizeof(default_sam), "%s/sam", config_dir);
+	snprintf(default_crt, sizeof(default_crt), "%s/tls.crt", config_dir);
+	snprintf(default_key, sizeof(default_key), "%s/tls.key", config_dir);
 	const char* sam_file = self.cfg.sam_file ? self.cfg.sam_file : default_sam;
 
 	if (option_parser_get_value(&parser, "set-password")) {
@@ -1119,6 +1125,10 @@ int main(int argc, char* argv[])
 	if (!address)
 		address = self.cfg.address ? self.cfg.address : DEFAULT_ADDRESS;
 
+	if (self.cfg.port > 65535) {
+		wv_log(WV_LOG_ERROR, "Invalid port in the config file: %u", self.cfg.port);
+		goto out;
+	}
 	int port = self.cfg.port ? (int)self.cfg.port : DEFAULT_PORT;
 	const char* port_str = option_parser_get_value_no_default(&parser,
 			"port");
@@ -1132,15 +1142,20 @@ int main(int argc, char* argv[])
 		port = p;
 	}
 
-	self.max_rate = self.cfg.max_rate ? (int)self.cfg.max_rate
-		: DEFAULT_MAX_RATE;
+	/* Frames a second: 1 to MAX_RATE, from the config file or -f. */
+	long rate = self.cfg.max_rate ? (long)self.cfg.max_rate : DEFAULT_MAX_RATE;
 	const char* max_fps = option_parser_get_value(&parser, "max-fps");
-	if (max_fps)
-		self.max_rate = atoi(max_fps);
-	if (self.max_rate <= 0) {
-		wv_log(WV_LOG_ERROR, "Invalid frame rate");
+	if (max_fps) {
+		char* end;
+		rate = strtol(max_fps, &end, 10);
+		if (!*max_fps || *end)
+			rate = 0;
+	}
+	if (rate <= 0 || rate > MAX_RATE) {
+		wv_log(WV_LOG_ERROR, "Invalid frame rate (1 to %d)", MAX_RATE);
 		goto out;
 	}
+	self.max_rate = rate;
 
 	const char* keyboard = option_parser_get_value(&parser, "keyboard");
 	if (!keyboard)

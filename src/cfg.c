@@ -14,6 +14,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -118,8 +119,11 @@ int cfg_load(struct cfg* self, const char* requested_path)
 {
 	const char* path = requested_path ? requested_path
 	                                  : cfg__get_default_path();
-	if (!path)
+	/* No home, no default config file: as if it weren't there. */
+	if (!path) {
+		errno = ENOENT;
 		return -1;
+	}
 
 	FILE* stream = fopen(path, "r");
 	if (!stream)
