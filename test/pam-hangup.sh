@@ -4,7 +4,9 @@
 #
 #   MWC=/path/to/mwc test/pam-hangup.sh [build/wayrdp]
 #
-# Needs /etc/pam.d/wayrdp, but not the password: every guess is wrong.
+# Needs /etc/pam.d/wayrdp, but not the password: every guess is wrong. It
+# skips where PAM counts failed logins (pam_faillock, pam_tally), which
+# six wrong passwords could lock the account with.
 # Checks: three wrong passwords whose clients hung up before PAM answered
 # still lock new connections out; and checks that go on after their client
 # left count toward the four that may wait at a time, added to the
@@ -17,6 +19,13 @@ WAYRDP=${1:-build/wayrdp}
 . "$(dirname "$0")/mwc.sh"
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 [ -e /etc/pam.d/wayrdp ] || { echo "SKIP: no /etc/pam.d/wayrdp"; exit 77; }
+# Six wrong passwords for the user running the test: where PAM counts
+# them, they could lock the account.
+if grep -qsE 'pam_(faillock|tally2?)\.so' /etc/pam.d/wayrdp /etc/pam.d/common-auth \
+		/etc/pam.d/common-account; then
+	echo "SKIP: PAM counts failed logins here (pam_faillock or pam_tally)"
+	exit 77
+fi
 for tool in sdl-freerdp3; do
 	command -v $tool >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
