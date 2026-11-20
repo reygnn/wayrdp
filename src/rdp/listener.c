@@ -48,6 +48,9 @@ static BOOL check_accept(freerdp_listener* listener)
 	LIST_FOREACH(peer, &self->peers, link)
 		if (!peer->logged_on && !peer->closing)
 			++pending;
+	/* PAM checks go on after their client hung up. */
+	if (pending < self->pam_jobs)
+		pending = self->pam_jobs;
 	if (pending >= MAX_PENDING) {
 		wv_log(WV_LOG_WARNING, "Connection refused: %d are logging on already",
 				pending);

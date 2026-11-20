@@ -19,6 +19,7 @@ release with `--sysconfdir=/etc` by default; see its header):
 | `meson test -C build` | unit tests in `test/unit/` |
 | `MWC=… test/mwc-rdp.sh` | end to end against a headless mwc, `-a nla` |
 | `MWC=… PAM_PASSWORD=… test/pam-rdp.sh` | end to end, `-a pam`; needs `/etc/pam.d/wayrdp` |
+| `MWC=… test/pam-hangup.sh` | `-a pam`, clients that hang up during the check; needs `/etc/pam.d/wayrdp`, no password |
 | `MWC=… test/mwc-probe.sh` | capture from mwc, no client |
 | `MWC=… test/clipboard-shutdown.sh` | exit with a clipboard read waiting, under valgrind |
 | `MWC=… test/stuck-client.sh` | a client that stops reading |

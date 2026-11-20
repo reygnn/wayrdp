@@ -348,6 +348,14 @@ static void on_pam_done(struct aml_work* work)
 		if (p->serial == job->serial && !p->closing)
 			self = p;
 
+	/* A client that hung up while its password was checked still made a
+	 * guess: count it here, rdp_server_peer_gone() didn't. */
+	if (!self && !job->ok) {
+		wv_log(WV_LOG_WARNING, "Wrong password for %s, the client is gone",
+				job->user);
+		rdp_auth_failure(&server->auth, gettime_us());
+	}
+
 	if (self) {
 		self->pam_pending = false;
 		self->password_checked = true;
