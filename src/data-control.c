@@ -354,9 +354,17 @@ int data_control_read(struct data_control* self,
 	if (!self->current || self->current->best < 0)
 		return -1;
 
+	/* Only our end is non-blocking: the write end goes to the owner of the
+	 * selection, which may rely on its writes blocking. */
 	int fds[2];
-	if (pipe2(fds, O_CLOEXEC | O_NONBLOCK) < 0) {
+	if (pipe2(fds, O_CLOEXEC) < 0) {
 		wv_log(WV_LOG_ERROR, "pipe: %m");
+		return -1;
+	}
+	if (fcntl(fds[0], F_SETFL, O_NONBLOCK) < 0) {
+		wv_log(WV_LOG_ERROR, "fcntl: %m");
+		close(fds[0]);
+		close(fds[1]);
 		return -1;
 	}
 

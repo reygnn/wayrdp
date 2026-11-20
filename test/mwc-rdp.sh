@@ -10,7 +10,8 @@
 #    pointer, focus and a terminal running cat must show it, German layout
 #    on wayrdp's side (-k de).
 #  - mwc "C" runs xfreerdp3, which replaces B's session; wl-copy in one,
-#    wl-paste in the other, both ways, Unicode and several lines; no echo.
+#    wl-paste in the other, both ways, Unicode and several lines, 200 kB
+#    from the session; no echo.
 #  - a pointer image goes to the client.
 #  - mwc "D" runs xfreerdp3 /dynamic-resolution asking for 901x700: the
 #    output becomes 900x700 (even width), and when D's window is resized to
@@ -33,8 +34,8 @@
 # out.
 #
 # Needs mwc, foot, Xwayland, xfreerdp3, sdl-freerdp3, grim, wl-clipboard
-# and xdotool, and build/test/vinput. WAYRDP_WRAP goes in front of
-# wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
+# and xdotool, build/test/vinput and build/test/selowner. WAYRDP_WRAP goes
+# in front of wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
 WAYRDP=${1:-build/wayrdp}
@@ -395,6 +396,27 @@ wl_copy a "$lines"
 expect_paste c "$lines" "several lines from the session"
 wl_copy c "$lines C"
 expect_paste a "$lines C" "several lines from the client"
+
+# More than a pipe buffer from the session, from an owner that writes it
+# in one go and relies on the pipe to block (test/selowner).
+SELOWNER=$(dirname "$WAYRDP")/test/selowner
+[ -x "$SELOWNER" ] || fail "$SELOWNER not built"
+for ((i = 0; i < 12000; i++)); do printf 'Zeile %05d äöü\n' $i; done >"$dir/big.txt"
+coproc SEL { XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 \
+	"$SELOWNER" <"$dir/big.txt" 2>"$dir/selowner.log"; }
+pids+=($!)
+read -r answer <&"${SEL[0]}"
+[ "$answer" = ok ] || fail "selowner did not take the selection"
+for ((i = 0; i < 25; i++)); do
+	XDG_RUNTIME_DIR=$dir/c/run WAYLAND_DISPLAY=wayland-0 \
+		timeout 10 wl-paste -n 2>/dev/null >"$dir/big-pasted.txt"
+	cmp -s "$dir/big.txt" "$dir/big-pasted.txt" && break
+	sleep 0.2
+done
+cmp -s "$dir/big.txt" "$dir/big-pasted.txt" \
+	|| fail "$(stat -c %s "$dir/big.txt") bytes copied in the session, $(stat -c %s "$dir/big-pasted.txt") pasted on the client"
+[ -s "$dir/selowner.log" ] && fail "selowner: $(cat "$dir/selowner.log")"
+echo "ok: $(stat -c %s "$dir/big.txt") bytes from the session"
 
 # No echo: one copy, one format list, not a loop.
 n=$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")
