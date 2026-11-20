@@ -66,3 +66,15 @@ struct rdp_utf16_decoder {
 /* Returns the code point, or 0 while waiting for the second half of a pair
  * (and for lone or broken halves). */
 uint32_t rdp_utf16_decode(struct rdp_utf16_decoder* self, uint16_t unit);
+
+/* Unicode key events: presses and releases each come as UTF-16 units, a
+ * pair as two events each, and the two streams may interleave (H down,
+ * H up, L down, L up). One decoder for each, so neither eats a half of
+ * the other's pair. */
+struct rdp_unicode_keys {
+	struct rdp_utf16_decoder press, release;
+};
+
+/* The code point once a unit completes it, else 0. */
+uint32_t rdp_unicode_key(struct rdp_unicode_keys* self, uint16_t unit,
+		bool release);

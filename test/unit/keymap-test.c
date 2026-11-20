@@ -132,6 +132,23 @@ static int test_utf16(void)
 	return 0;
 }
 
+/* U+1F600 pressed and let go, each unit its own event: both the press
+ * and the release come out, however the two streams interleave. */
+static int test_unicode_keys(void)
+{
+	struct rdp_unicode_keys keys = { 0 };
+	ASSERT_UINT32_EQ(0, rdp_unicode_key(&keys, 0xd83d, false));
+	ASSERT_UINT32_EQ(0, rdp_unicode_key(&keys, 0xd83d, true));
+	ASSERT_UINT32_EQ(0x1f600, rdp_unicode_key(&keys, 0xde00, false));
+	ASSERT_UINT32_EQ(0x1f600, rdp_unicode_key(&keys, 0xde00, true));
+	/* Down, down, up, up as well. */
+	ASSERT_UINT32_EQ(0, rdp_unicode_key(&keys, 0xd83d, false));
+	ASSERT_UINT32_EQ(0x1f600, rdp_unicode_key(&keys, 0xde00, false));
+	ASSERT_UINT32_EQ(0, rdp_unicode_key(&keys, 0xd83d, true));
+	ASSERT_UINT32_EQ(0x1f600, rdp_unicode_key(&keys, 0xde00, true));
+	return 0;
+}
+
 int main(void)
 {
 	int r = 0;
@@ -140,5 +157,6 @@ int main(void)
 	r |= test_key_decode();
 	r |= test_wheel();
 	r |= test_utf16();
+	r |= test_unicode_keys();
 	return r;
 }

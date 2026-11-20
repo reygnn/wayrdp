@@ -125,7 +125,7 @@ struct rdp_peer {
 	uint64_t connected_us;
 
 	struct rdp_key_decoder key_decoder;
-	struct rdp_utf16_decoder utf16_decoder;
+	struct rdp_unicode_keys unicode_keys;
 	/* Buttons this client holds down, to let go when it goes. */
 	uint32_t buttons;
 

@@ -111,7 +111,8 @@ static BOOL on_unicode_keyboard(rdpInput* input, UINT16 flags, UINT16 code)
 	if (!h)
 		return TRUE;
 
-	uint32_t cp = rdp_utf16_decode(&self->utf16_decoder, code);
+	uint32_t cp = rdp_unicode_key(&self->unicode_keys, code,
+			flags & RDP_KBD_RELEASE);
 	if (!cp)
 		return TRUE;
 
@@ -237,5 +238,5 @@ void rdp_input_release(struct rdp_peer* self)
 	}
 	h->release_all(userdata(self));
 	self->key_decoder.pause_pending = false;
-	self->utf16_decoder.high = 0;
+	self->unicode_keys = (struct rdp_unicode_keys){ 0 };
 }

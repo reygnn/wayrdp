@@ -173,3 +173,9 @@ uint32_t rdp_utf16_decode(struct rdp_utf16_decoder* self, uint16_t unit)
 	self->high = 0;
 	return unit;
 }
+
+uint32_t rdp_unicode_key(struct rdp_unicode_keys* self, uint16_t unit,
+		bool release)
+{
+	return rdp_utf16_decode(release ? &self->release : &self->press, unit);
+}
