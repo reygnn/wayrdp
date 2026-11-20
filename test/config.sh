@@ -26,7 +26,10 @@ grep -q "No config directory" "$dir/out" || fail "no reason given"
 ls "$dir/cwd" | grep -q . && fail "files in the current directory: $(ls "$dir/cwd")"
 echo "ok: no HOME: no config directory, refused, nothing in the current directory"
 
-run -u HOME -u XDG_CONFIG_HOME "$wayrdp" --set-password </dev/null && fail "--set-password without a config directory"
+echo "ein-passwort" >"$dir/pw"
+run -u HOME -u XDG_CONFIG_HOME "$wayrdp" --set-password <"$dir/pw" \
+	&& fail "--set-password without a config directory"
+grep -q "No config directory" "$dir/out" || fail "--set-password: no reason given"
 ls "$dir/cwd" | grep -q . && fail "--set-password wrote to the current directory"
 echo "ok: no HOME: --set-password refused"
 

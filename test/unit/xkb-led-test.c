@@ -22,7 +22,10 @@
 
 static struct xkb_keymap* keymap(struct xkb_context* ctx, const char* layout)
 {
-	struct xkb_rule_names names = { .layout = layout };
+	/* Spelt out, not from XKB_DEFAULT_* in the environment. */
+	struct xkb_rule_names names = {
+		.rules = "evdev", .model = "pc105", .layout = layout, .options = "",
+	};
 	return xkb_keymap_new_from_names(ctx, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
 }
 
@@ -30,7 +33,7 @@ static struct xkb_keymap* keymap(struct xkb_context* ctx, const char* layout)
  * xkeyboard-config), so it mustn't be synced. */
 static int test_layouts(void)
 {
-	struct xkb_context* ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	struct xkb_context* ctx = xkb_context_new(XKB_CONTEXT_NO_ENVIRONMENT_NAMES);
 	ASSERT_TRUE(ctx != NULL);
 	const char* layouts[] = { "us", "de", "ch" };
 	for (size_t i = 0; i < sizeof(layouts) / sizeof(*layouts); ++i) {
@@ -51,7 +54,7 @@ static int test_layouts(void)
  * Lock is pressed. Then the session has it: nothing. */
 static int test_to_press(void)
 {
-	struct xkb_context* ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	struct xkb_context* ctx = xkb_context_new(XKB_CONTEXT_NO_ENVIRONMENT_NAMES);
 	struct xkb_keymap* km = keymap(ctx, "de");
 	ASSERT_TRUE(km != NULL);
 	struct xkb_state* st = xkb_state_new(km);

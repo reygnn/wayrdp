@@ -494,6 +494,7 @@ echo "ok: no clipboard echo"
 wl_copy c "von C, bald weg"
 expect_paste a "von C, bald weg" "C's text in the session"
 n_told=$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")
+n_lists=$(grep -c "Client clipboard:" "$dir/wayrdp.log")
 n_active=$(grep -c "active, 1024x768" "$dir/wayrdp.log")
 start_mwc f 1400x1000 '#000000' \
 	"sdl-freerdp3 /v:127.0.0.1:$PORT /u:$USER_NAME /p:$PASSWORD /cert:ignore /size:1024x768 /log-level:OFF >$dir/client-f.log 2>&1"
@@ -508,6 +509,13 @@ for ((i = 0; i < 25; i++)); do
 done
 XDG_RUNTIME_DIR=$dir/a/run WAYLAND_DISPLAY=wayland-0 wl-paste -l >/dev/null 2>&1 \
 	&& fail "C's text stayed in the session after F replaced C"
+# F is told once its first format list came: wait for that.
+for ((i = 0; i < 50; i++)); do
+	[ "$(grep -c "Client clipboard:" "$dir/wayrdp.log")" -gt "$n_lists" ] && break
+	sleep 0.2
+done
+[ "$(grep -c "Client clipboard:" "$dir/wayrdp.log")" -gt "$n_lists" ] \
+	|| fail "F sent no format list"
 [ "$(grep -c "Telling the client: session clipboard has text" "$dir/wayrdp.log")" = "$n_told" ] \
 	|| fail "F was told the session clipboard has text"
 echo "ok: a client's text in the session goes with it"
