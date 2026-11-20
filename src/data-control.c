@@ -339,7 +339,11 @@ static void on_read(struct aml_handler* handler)
 		read_finish(ctx, false);
 		return;
 	}
-	wv_vec_append(&ctx->buffer, buf, n);
+	if (wv_vec_append(&ctx->buffer, buf, n) < 0) {
+		/* Not with a gap in the middle. */
+		wv_log(WV_LOG_WARNING, "Clipboard not sent: no memory");
+		read_finish(ctx, false);
+	}
 }
 
 static void on_read_timeout(struct aml_timer* timer)
