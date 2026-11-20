@@ -111,6 +111,7 @@ struct wayrdp {
 
 	struct observer output_added_observer;
 	struct observer output_removed_observer;
+	struct observer seat_removed_observer;
 	struct observer wayland_destroy_observer;
 	struct observer power_change_observer;
 	struct observer source_destroy_observer;
@@ -816,6 +817,20 @@ static void on_output_added(struct observer* observer, void* data)
 		switch_to_output(self, output);
 }
 
+/* Our seat: the virtual keyboard and pointer, the clipboard and the
+ * cursor capture all hang on it. Without it wayrdp ends (a service starts
+ * it again on another). */
+static void on_seat_removed(struct observer* observer, void* data)
+{
+	struct wayrdp* self = wl_container_of(observer, self,
+			seat_removed_observer);
+	if (data != self->seat)
+		return;
+	wv_log(WV_LOG_ERROR, "The compositor took the seat away. Exiting...");
+	self->seat = NULL;
+	wayrdp_exit(self, 1);
+}
+
 static void on_output_removed(struct observer* observer, void* data)
 {
 	struct wayrdp* self = wl_container_of(observer, self,
@@ -863,6 +878,7 @@ static void on_wayland_destroyed(struct observer* observer, void* data)
 
 	observer_deinit(&self->output_added_observer);
 	observer_deinit(&self->output_removed_observer);
+	observer_deinit(&self->seat_removed_observer);
 	observer_deinit(&self->wayland_destroy_observer);
 	if (self->image_source) {
 		observer_deinit(&self->power_change_observer);
@@ -933,6 +949,8 @@ static int attach_wayland(struct wayrdp* self)
 			&wayland->observable.output_added, on_output_added);
 	observer_init(&self->output_removed_observer,
 			&wayland->observable.output_removed, on_output_removed);
+	observer_init(&self->seat_removed_observer,
+			&wayland->observable.seat_removed, on_seat_removed);
 	observer_init(&self->wayland_destroy_observer,
 			&wayland->observable.destroyed, on_wayland_destroyed);
 

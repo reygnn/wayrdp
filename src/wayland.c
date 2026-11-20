@@ -173,7 +173,12 @@ static void registry_add(void* data, struct wl_registry* registry,
 			wl_display_dispatch(self->display);
 			wl_display_roundtrip(self->display);
 
-			observable_notify(&self->observable.output_added, output);
+			/* The dispatch may have removed it again (global_remove
+			 * right after): then there is nothing to tell. */
+			output = output_find_by_id(&self->outputs, id);
+			if (output)
+				observable_notify(&self->observable.output_added,
+						output);
 		}
 
 		return;
