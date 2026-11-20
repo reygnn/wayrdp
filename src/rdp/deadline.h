@@ -40,3 +40,7 @@ struct rdp_deadline* rdp_deadline_start(uint64_t timeout_us,
 /* Stops the deadline at once (it doesn't wait for the time) and frees it.
  * True if fire ran. NULL is fine. */
 bool rdp_deadline_stop(struct rdp_deadline* self);
+
+/* Whether the time is up, fire called or about to be; from any thread.
+ * False for NULL. */
+bool rdp_deadline_fired(const struct rdp_deadline* self);

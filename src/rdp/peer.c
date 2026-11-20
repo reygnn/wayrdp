@@ -182,8 +182,9 @@ static void on_peer_event(struct aml_handler* handler)
 		return;
 
 	if (!self->client->CheckFileDescriptor(self->client)) {
-		if (!self->logged_on && self->login_abort.event
-				&& WaitForSingleObject(self->login_abort.event, 0) == WAIT_OBJECT_0)
+		/* Not the abort event: FreeRDP sets it too, when the client
+		 * disconnects on its own. */
+		if (!self->logged_on && rdp_deadline_fired(self->login_deadline))
 			wv_log(WV_LOG_WARNING, "%s didn't log on in time (stuck in the handshake)",
 					self->client->hostname);
 		rdp_peer_close(self);

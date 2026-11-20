@@ -51,6 +51,7 @@ static int test_fires(void)
 	}
 	ASSERT_INT_EQ(1, (int)fired);
 	ASSERT_TRUE(fired_at - start >= 50000);
+	ASSERT_TRUE(rdp_deadline_fired(d));
 	ASSERT_TRUE(rdp_deadline_stop(d));
 	ASSERT_INT_EQ(1, (int)fired);
 	return 0;
@@ -63,6 +64,7 @@ static int test_stopped(void)
 	uint64_t start = now_us();
 	struct rdp_deadline* d = rdp_deadline_start(10 * 1000000, fire, NULL);
 	ASSERT_TRUE(d != NULL);
+	ASSERT_FALSE(rdp_deadline_fired(d));
 	ASSERT_FALSE(rdp_deadline_stop(d));
 	ASSERT_TRUE(now_us() - start < 1000000);
 	ASSERT_INT_EQ(0, (int)fired);
@@ -72,6 +74,7 @@ static int test_stopped(void)
 static int test_stop_null(void)
 {
 	ASSERT_FALSE(rdp_deadline_stop(NULL));
+	ASSERT_FALSE(rdp_deadline_fired(NULL));
 	return 0;
 }
 

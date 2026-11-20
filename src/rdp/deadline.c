@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <stdatomic.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
@@ -32,8 +33,8 @@ struct rdp_deadline {
 	uint64_t timeout_us;
 	void (*fire)(void* arg);
 	void* arg;
-	/* Read only after the join. */
-	bool fired;
+	/* Set by the thread before fire. */
+	atomic_bool fired;
 };
 
 static uint64_t now_us(void)
@@ -60,7 +61,7 @@ static void* run(void* data)
 		if (rc < 0 && errno != EINTR)
 			return NULL;
 	}
-	self->fired = true;
+	atomic_store(&self->fired, true);
 	self->fire(self->arg);
 	return NULL;
 }
@@ -87,6 +88,11 @@ struct rdp_deadline* rdp_deadline_start(uint64_t timeout_us,
 	return self;
 }
 
+bool rdp_deadline_fired(const struct rdp_deadline* self)
+{
+	return self && atomic_load(&((struct rdp_deadline*)self)->fired);
+}
+
 bool rdp_deadline_stop(struct rdp_deadline* self)
 {
 	if (!self)
@@ -95,7 +101,7 @@ bool rdp_deadline_stop(struct rdp_deadline* self)
 	while (write(self->pipe[1], &c, 1) < 0 && errno == EINTR)
 		;
 	pthread_join(self->thread, NULL);
-	bool fired = self->fired;
+	bool fired = atomic_load(&self->fired);
 	close(self->pipe[0]);
 	close(self->pipe[1]);
 	free(self);

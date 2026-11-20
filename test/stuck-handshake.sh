@@ -9,7 +9,8 @@
 #    nothing; xfreerdp3 +auth-only must still log on, within 10 s, and the
 #    held connection must be closed for that, as stuck in the handshake
 #  - the same for -a pam (TLS only): the held connection is closed after
-#    the timeout and wayrdp answers a new one
+#    the timeout and wayrdp answers a new one; a client that goes on its
+#    own during its password check isn't taken for a stuck one
 #
 #   test/stuck-handshake.sh [build/wayrdp]
 set -u
@@ -17,7 +18,7 @@ set -u
 WAYRDP=${1:-build/wayrdp}
 . "$(dirname "$0")/mwc.sh"
 HOLD=$(dirname "$0")/x224-hold.py
-for tool in "$MWC" xfreerdp3 python3; do
+for tool in "$MWC" xfreerdp3 sdl-freerdp3 python3; do
 	command -v "$tool" >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done
 [ -x "$WAYRDP" ] || { echo "FAIL: $WAYRDP not built"; exit 1; }
@@ -104,4 +105,31 @@ hold "$PORT2" 1
 wait_log "stuck in the handshake" "$dir/wayrdp-pam.log" "-a pam: the stuck connection wasn't closed"
 python3 -I "$HOLD" "$PORT2" 0 1 >/dev/null || fail "-a pam: wayrdp doesn't answer after the stuck connection"
 echo "ok: -a pam: the stuck connection is closed, wayrdp answers again"
+
+# A client that goes on its own before it logged on (closed while its
+# password is checked) is no stuck handshake, though FreeRDP sets its
+# abort event then too.
+n_stuck=$(grep -c "stuck in the handshake" "$dir/wayrdp-pam.log")
+n_sent=$(grep -c "client wants" "$dir/wayrdp-pam.log")
+n_closed=$(grep -c "Connection from 127.0.0.1 closed" "$dir/wayrdp-pam.log")
+XDG_RUNTIME_DIR=$dir/run WAYLAND_DISPLAY=wayland-0 sdl-freerdp3 /v:127.0.0.1:$PORT2 \
+	/sec:tls /cert:ignore /size:1024x768 /u:$USER_NAME /p:wrong /log-level:OFF \
+	>"$dir/client.log" 2>&1 &
+client=$!
+pids+=($client)
+for ((i = 0; i < 100; i++)); do
+	[ "$(grep -c "client wants" "$dir/wayrdp-pam.log")" -gt "$n_sent" ] && break
+	sleep 0.1
+done
+kill -TERM "$client"
+# The stuck message would come in the same call, before the close.
+for ((i = 0; i < 100; i++)); do
+	[ "$(grep -c "Connection from 127.0.0.1 closed" "$dir/wayrdp-pam.log")" -gt "$n_closed" ] && break
+	sleep 0.1
+done
+[ "$(grep -c "Connection from 127.0.0.1 closed" "$dir/wayrdp-pam.log")" -gt "$n_closed" ] \
+	|| fail "-a pam: the client that went wasn't closed"
+[ "$(grep -c "stuck in the handshake" "$dir/wayrdp-pam.log")" = "$n_stuck" ] \
+	|| fail "-a pam: a client that went on its own was logged as stuck in the handshake"
+echo "ok: -a pam: a client that goes on its own isn't taken for a stuck handshake"
 echo "PASS"
