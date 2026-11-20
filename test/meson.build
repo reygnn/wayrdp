@@ -1,5 +1,8 @@
 subdir('unit')
 
+# wayrdp --set-password, from a pipe.
+test('set-password', find_program('set-password.sh'), args: [wayrdp_exe])
+
 # wayrdp -v: the version and the commit built.
 test('version', find_program('version.sh'),
 	args: [wayrdp_exe, meson.project_source_root()])

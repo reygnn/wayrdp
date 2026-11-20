@@ -214,7 +214,8 @@ int rdp_auth_write_sam(const char* sam_file, const char* user,
 	return 0;
 }
 
-/* One line without the newline, without echo on a terminal. */
+/* One line without the newline, without echo on a terminal. -1 without
+ * one, -2 (said) for one too long for buf. */
 static int read_secret(const char* prompt, char* buf, size_t size)
 {
 	bool tty = isatty(STDIN_FILENO);
@@ -234,7 +235,19 @@ static int read_secret(const char* prompt, char* buf, size_t size)
 	}
 	if (!line)
 		return -1;
-	buf[strcspn(buf, "\n")] = '\0';
+	size_t n = strcspn(buf, "\n");
+	if (buf[n] != '\n' && !feof(stdin)) {
+		/* Longer than buf: refused rather than cut short, the rest of
+		 * the line read away. */
+		int c;
+		while ((c = getchar()) != EOF && c != '\n')
+			;
+		memset(buf, 0, size);
+		fprintf(stderr, "The password is too long (at most %zu bytes)\n",
+				size - 2);
+		return -2;
+	}
+	buf[n] = '\0';
 	return 0;
 }
 
@@ -247,8 +260,10 @@ int rdp_auth_set_password(const char* sam_file)
 	}
 
 	char pw1[256], pw2[256];
-	if (read_secret("RDP password: ", pw1, sizeof(pw1)) < 0) {
-		wv_log(WV_LOG_ERROR, "No password given");
+	int got = read_secret("RDP password: ", pw1, sizeof(pw1));
+	if (got < 0) {
+		if (got == -1)
+			wv_log(WV_LOG_ERROR, "No password given");
 		return 1;
 	}
 	if (isatty(STDIN_FILENO)) {
