@@ -301,8 +301,7 @@ static int wlr_screencopy_start(struct screencopy* ptr, bool is_immediate_copy)
 	self->is_immediate_copy = is_immediate_copy;
 
 	uint64_t now = gettime_us();
-	double dt = (now - self->last_time) * 1.0e-6;
-	int32_t time_left = (1.0 / ptr->rate_limit - dt) * 1.0e6;
+	uint32_t time_left = rate_wait_us(self->last_time, now, ptr->rate_limit);
 
 	self->status = WLR_SCREENCOPY_IN_PROGRESS;
 

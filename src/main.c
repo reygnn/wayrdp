@@ -326,8 +326,7 @@ static void process_frame(struct wayrdp* self, struct wv_buffer* buffer)
 		return;
 
 	uint64_t now = gettime_us();
-	double dt = (now - self->last_send_time) * 1.0e-6;
-	int32_t time_left = (1.0 / self->max_rate - dt) * 1.0e6;
+	uint32_t time_left = rate_wait_us(self->last_send_time, now, self->max_rate);
 
 	if (time_left > 0) {
 		aml_set_duration(self->rate_limiter, time_left);

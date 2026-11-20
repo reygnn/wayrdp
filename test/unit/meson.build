@@ -1,6 +1,7 @@
 # One program per module: NAME-test.c with the sources it tests, always under
 # ASan and UBSan, whatever the build type, so an overflow fails the test.
-san = ['-fsanitize=address,undefined', '-fno-sanitize-recover=all',
+san = ['-fsanitize=address,undefined,float-cast-overflow',
+	'-fno-sanitize-recover=all',
 	'-fno-omit-frame-pointer']
 src_inc = include_directories('../../src')
 # '../..' also brings the build root, where config.h is.
@@ -18,6 +19,7 @@ units = {
 	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
 	'intset': [['../../src/intset.c'], inc, []],
 	'log': [['../../src/log.c'], inc, []],
+	'time-util': [[], inc, []],
 	'auth': [['../../src/rdp/auth.c', '../../src/log.c'], [inc, root_inc],
 		[freerdp, winpr, winpr_tools]],
 	'buffer': [['../../src/buffer.c', '../../src/shm.c', '../../src/log.c',

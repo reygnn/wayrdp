@@ -44,3 +44,14 @@ static inline uint64_t gettime_ms(void)
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return timespec_to_ms(&ts);
 }
+
+/* How long to wait before the next frame, at most rate a second, the last
+ * at last_us: 0 if it may go now. */
+static inline uint32_t rate_wait_us(uint64_t last_us, uint64_t now_us,
+		double rate)
+{
+	/* In doubles until it is known to be small: a last frame long ago
+	 * would overflow an int32_t. */
+	double left = (1.0 / rate - (now_us - last_us) * 1.0e-6) * 1.0e6;
+	return left > 0 ? (uint32_t)left : 0;
+}

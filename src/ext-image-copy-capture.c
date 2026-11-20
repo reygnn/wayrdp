@@ -688,11 +688,10 @@ static int ext_image_copy_capture_start(struct screencopy* ptr, bool immediate)
 	}
 
 	uint64_t now = gettime_us();
-	double dt = (now - self->last_time) * 1.0e-6;
-	int32_t time_left = (1.0 / ptr->rate_limit - dt) * 1.0e6;
+	uint32_t time_left = rate_wait_us(self->last_time, now, ptr->rate_limit);
 
 	if (time_left > 0) {
-		wv_trace("Scheduling %scapture after %"PRId32" µs",
+		wv_trace("Scheduling %scapture after %"PRIu32" µs",
 				self->is_cursor_session ? "cursor " : "",
 				time_left);
 		aml_set_duration(self->timer, time_left);
