@@ -109,6 +109,7 @@ sources = [
 	'src/rdp/gfx.c',
 	'src/rdp/flow.c',
 	'src/rdp/deadline.c',
+	'src/rdp/pam.c',
 ]
 
 dependencies = [

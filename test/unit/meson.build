@@ -23,6 +23,10 @@ units = {
 		'../../src/pixels.c', '../../src/util.c', '../../src/strlcpy.c'],
 		[inc, root_inc], [wayland_client, client_protos, pixman, drm]],
 }
+if libpam.found()
+	units += {'pam': [['../../src/rdp/pam.c', '../../src/log.c'],
+		[inc, root_inc], [libpam]]}
+endif
 # Only what cannot be made real: a failing mmap.
 wrap = {'buffer': ['-Wl,--wrap=mmap64']}
 

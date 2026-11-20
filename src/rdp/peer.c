@@ -36,6 +36,7 @@
 
 #include "rdp/internal.h"
 #include "rdp/deadline.h"
+#include "rdp/pam.h"
 #include "log.h"
 #include "time-util.h"
 
@@ -356,13 +357,15 @@ struct pam_job {
 	uint64_t serial;
 	char* user;
 	char* password;
+	/* The client's address, for PAM_RHOST. */
+	char* rhost;
 	bool ok;
 };
 
 static void on_pam_work(struct aml_work* work)
 {
 	struct pam_job* job = aml_get_userdata(work);
-	job->ok = rdp_auth_pam(job->user, job->password);
+	job->ok = rdp_auth_pam(NULL, job->user, job->password, job->rhost);
 }
 
 static void on_pam_done(struct aml_work* work)
@@ -416,6 +419,7 @@ static void free_pam_job(void* userdata)
 		free(job->password);
 	}
 	free(job->user);
+	free(job->rhost);
 	free(job);
 }
 
@@ -447,13 +451,14 @@ static bool start_pam(struct rdp_peer* self)
 	job->serial = self->serial;
 	/* PAM wants the account's own spelling. */
 	job->user = strdup(me);
+	job->rhost = strdup(client->hostname);
 	job->password = strdup(password);
 	/* The settings needn't keep it. */
 	freerdp_settings_set_string(settings, FreeRDP_Password, NULL);
 
 	struct aml_work* work = aml_work_new(on_pam_work, on_pam_done, job,
 			free_pam_job);
-	if (!job->user || !job->password || !work
+	if (!job->user || !job->password || !job->rhost || !work
 			|| aml_start(aml_get_default(), work) < 0) {
 		if (work)
 			aml_unref(work);

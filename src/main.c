@@ -55,6 +55,7 @@
 #include "pointer.h"
 #include "rdp/server.h"
 #include "rdp/auth.h"
+#include "rdp/pam.h"
 #include "rdp/keymap.h"
 #include "screencopy-interface.h"
 #include "seat.h"
