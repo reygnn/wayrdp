@@ -14,10 +14,11 @@
 #    from the session; no echo.
 #  - a pointer image goes to the client.
 #  - mwc "D" runs xfreerdp3 /dynamic-resolution asking for 901x700: the
-#    output becomes 900x700 (even width), and when D's window is resized to
-#    1100x800 the output follows (display control); again on a still
-#    desktop (the clock stopped), to 1200x900; mwc "E" asks for 1000x740
-#    and goes at once: no warning about that size.
+#    output becomes 900x700 (even width) and keeps its place in the
+#    layout, and when D's window is resized to 1100x800 the output follows
+#    (display control); again on a still desktop (the clock stopped), to
+#    1200x900; mwc "E" asks for 1000x740 and goes at once: no warning
+#    about that size.
 #
 #   MWC=/path/to/mwc test/mwc-rdp.sh [build/wayrdp]
 #
@@ -433,7 +434,9 @@ echo "ok: pointer image sent ($(grep -o 'Pointer [0-9]*x[0-9]*, hotspot [0-9,]*'
 ;; esac
 
 # The output changes size in the session (mwmrc reloaded): the client follows.
+# It also moves away from 0,0, where a resize must leave it.
 sed -i 's/outputMode: .*/outputMode: 1280x720/' "$dir/a/config/mwc/mwmrc"
+echo 'Mwm*HEADLESS-1*outputPosition: 200,100' >>"$dir/a/config/mwc/mwmrc"
 kill -HUP "${pids[0]}"
 for ((i = 0; i < 75; i++)); do
 	grep -q "active, 1280x720, $EXPECT_CODEC" "$dir/wayrdp.log" && break
@@ -454,8 +457,10 @@ if [ "$OUTPUT_MANAGEMENT" = 1 ]; then
 	grep -q "active, 900x700" "$dir/wayrdp.log" || fail "D never became active at 900x700"
 	[ "$(state a output_HEADLESS-1 w)" = 900 ] && [ "$(state a output_HEADLESS-1 h)" = 700 ] \
 		|| fail "A's output isn't 900x700"
+	pos="$(state a output_HEADLESS-1 x),$(state a output_HEADLESS-1 y)"
+	[ "$pos" = 200,100 ] || fail "the resize moved A's output from 200,100 to $pos"
 	grep -q "desktop resized to 900x700" "$dir/wayrdp.log" || fail "D wasn't told the even width"
-	echo "ok: D asks for 901x700, the output and D get 900x700 (even width)"
+	echo "ok: D asks for 901x700, the output and D get 900x700 (even width), still at 200,100"
 
 	for ((i = 0; i < 50; i++)); do
 		grep -q "display control open" "$dir/wayrdp.log" && break

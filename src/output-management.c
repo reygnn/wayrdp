@@ -323,8 +323,7 @@ void wlr_output_manager_abort_config(
 
 bool wlr_output_manager_configure_output(
 		struct zwlr_output_configuration_v1* config,
-		struct output* output, uint16_t width, uint16_t height,
-		uint16_t x, uint16_t y)
+		struct output* output, uint16_t width, uint16_t height)
 {
 	// TODO: This could be synced to --max-fps
 	int refresh_rate = 0;
@@ -352,8 +351,7 @@ bool wlr_output_manager_configure_output(
 		zwlr_output_configuration_head_v1_set_custom_mode(
 			config_head, width, height, refresh_rate);
 
-		zwlr_output_configuration_head_v1_set_position(config_head,
-				x, y);
+		/* No position: the head keeps its place in the layout. */
 
 		/* It doesn't make any sense to have rotation on a
 		 * headless display, so we set the transform here to be
@@ -376,8 +374,8 @@ bool wlr_output_manager_resize_output(struct output* output,
 		wlr_output_manager_start_config();
 	if (!config)
 		return false;
-	if (!wlr_output_manager_configure_output(config, output, width, height,
-				0, 0)) {
+	if (!wlr_output_manager_configure_output(config, output, width,
+				height)) {
 		wlr_output_manager_abort_config(config);
 		return false;
 	}
