@@ -17,6 +17,13 @@ WAYRDP=${1:-build/wayrdp}
 PORT=${PORT:-$((20000 + RANDOM % 10000))}
 [ -n "${PAM_PASSWORD:-}" ] || { echo "SKIP: set PAM_PASSWORD"; exit 77; }
 [ -e /etc/pam.d/wayrdp ] || { echo "SKIP: no /etc/pam.d/wayrdp"; exit 77; }
+# Three wrong passwords in a row for the user running the test: where PAM
+# counts them, they could lock the account.
+if grep -qsE 'pam_(faillock|tally2?)\.so' /etc/pam.d/wayrdp /etc/pam.d/common-auth \
+		/etc/pam.d/common-account; then
+	echo "SKIP: PAM counts failed logins here (pam_faillock or pam_tally)"
+	exit 77
+fi
 for tool in foot sdl-freerdp3 grim python3; do
 	command -v $tool >/dev/null || { echo "FAIL: $tool not installed"; exit 1; }
 done

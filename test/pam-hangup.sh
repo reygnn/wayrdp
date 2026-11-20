@@ -146,11 +146,13 @@ for ((i = 0; i < 20; i++)); do
 done
 [ "$(count "Connection from [0-9.]*$" "$dir/wayrdp2.log")" -ge 4 ] \
 	|| fail "the fourth connection wasn't accepted beside three checks"
+# Before the fifth: with a check already answered (slow handshakes, or
+# under valgrind) three would be left, and the fifth rightly accepted.
+[ "$(count "PAM: Authentication failure" "$dir/wayrdp2.log")" = 0 ] \
+	|| fail "a check was answered before the fifth came; the test needs all three waiting"
 exec 4<>/dev/tcp/127.0.0.1/$PORT2
 wait_count "Connection refused: 4 are logging on already" 1 \
 	"a fifth connection wasn't refused beside three checks and one waiting" "$dir/wayrdp2.log"
 exec 3>&- 4>&-
-[ "$(count "PAM: Authentication failure" "$dir/wayrdp2.log")" = 0 ] \
-	|| fail "a check was answered before the fifth came; the test needs all three waiting"
 echo "ok: checks of clients that left count toward the four, beside waiting connections"
 echo "PASS"
