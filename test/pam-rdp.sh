@@ -6,8 +6,9 @@
 # Needs /etc/pam.d/wayrdp (meson install, or wayrdp.pam copied there) and the
 # password of the user running the test. Checks: the right password gets
 # the picture, a wrong one and an empty one are refused, a connection that
-# doesn't log on is closed (WAYRDP_LOGIN_TIMEOUT=3), and the three
-# failures lock new connections out. WAYRDP_WRAP goes in front of wayrdp,
+# doesn't log on is closed (WAYRDP_LOGIN_TIMEOUT=3), and three wrong
+# passwords, but not the empty one or the silent connection, lock new
+# connections out. WAYRDP_WRAP goes in front of wayrdp,
 # e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
@@ -139,10 +140,23 @@ wait_log "didn't log on in time" "a silent connection stayed"
 exec 3>&-
 echo "ok: a silent connection is closed after the login timeout"
 
-# Those were three failures in a row: locked out now.
+# Only a password that was checked and refused counts: no credentials and
+# the silent connection didn't, so one failure so far. Two more wrong
+# passwords make three in a row, and the next connection is locked out.
+grep -q "failed logins: no new connections" "$dir/wayrdp.log" \
+	&& fail "locked out before three passwords were refused"
+for n in 2 3; do
+	client f$n /u:$USER_NAME /p:wrong-password-$n
+	for ((i = 0; i < 150; i++)); do
+		[ "$(grep -c "wrong password for" "$dir/wayrdp.log")" -ge $n ] && break
+		sleep 0.2
+	done
+	[ "$(grep -c "wrong password for" "$dir/wayrdp.log")" -ge $n ] \
+		|| fail "wrong password $n wasn't refused"
+done
 client e /u:$USER_NAME /p:"$PAM_PASSWORD"
-wait_log "Connection refused: locked" "no lockout after three failures"
-echo "ok: locked out after three failures"
+wait_log "Connection refused: locked" "no lockout after three wrong passwords"
+echo "ok: no credentials and a silent connection don't count; three wrong passwords lock out"
 
 # Four connections may wait for their logon at a time, not five. A fresh
 # wayrdp: the one above is locked out.
