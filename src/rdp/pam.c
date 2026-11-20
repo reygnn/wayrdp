@@ -15,12 +15,32 @@
  */
 
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "rdp/pam.h"
 #include "config.h"
 #include "log.h"
+
+uint64_t rdp_auth_pam_now_us(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+void rdp_auth_pam_refusal_wait(uint64_t since_us)
+{
+	uint64_t end = since_us + RDP_PAM_REFUSAL_US;
+	for (uint64_t now; (now = rdp_auth_pam_now_us()) < end;) {
+		uint64_t left = end - now;
+		struct timespec ts = { left / 1000000, (left % 1000000) * 1000 };
+		if (nanosleep(&ts, NULL) < 0 && errno != EINTR)
+			break;
+	}
+}
 
 #ifdef ENABLE_PAM
 #include <security/pam_appl.h>
@@ -63,9 +83,10 @@ failure:
 	return PAM_CONV_ERR;
 }
 
-bool rdp_auth_pam(const char* confdir, const char* user, const char* password,
-		const char* rhost)
+enum rdp_pam_result rdp_auth_pam(const char* confdir, const char* user,
+		const char* password, const char* rhost)
 {
+	uint64_t start = rdp_auth_pam_now_us();
 	struct pam_conv conv = {
 		.conv = pam_conversation,
 		.appdata_ptr = (void*)password,
@@ -74,7 +95,8 @@ bool rdp_auth_pam(const char* confdir, const char* user, const char* password,
 	int rc = pam_start_confdir("wayrdp", user, &conv, confdir, &pam);
 	if (rc != PAM_SUCCESS) {
 		wv_log(WV_LOG_ERROR, "PAM: %s", pam_strerror(pam, rc));
-		return false;
+		rdp_auth_pam_refusal_wait(start);
+		return RDP_PAM_ERROR;
 	}
 
 	/* A login from elsewhere: modules that let the user in by presence at
@@ -86,15 +108,26 @@ bool rdp_auth_pam(const char* confdir, const char* user, const char* password,
 	if (rc == PAM_SUCCESS)
 		rc = pam_set_item(pam, PAM_TTY, "wayrdp");
 
-	if (rc == PAM_SUCCESS)
+	enum rdp_pam_result result = RDP_PAM_ERROR;
+	if (rc == PAM_SUCCESS) {
 		rc = pam_authenticate(pam, PAM_DISALLOW_NULL_AUTHTOK);
-	if (rc == PAM_SUCCESS)
+		result = RDP_PAM_REFUSED;
+	}
+	if (rc == PAM_SUCCESS) {
 		rc = pam_acct_mgmt(pam, PAM_DISALLOW_NULL_AUTHTOK);
-	if (rc != PAM_SUCCESS)
+		result = RDP_PAM_ACCOUNT;
+	}
+	if (rc == PAM_SUCCESS)
+		result = RDP_PAM_OK;
+	else
 		wv_log(WV_LOG_WARNING, "PAM: %s for %s", pam_strerror(pam, rc), user);
 
 	pam_end(pam, rc);
-	return rc == PAM_SUCCESS;
+	/* pam_unix waited after a wrong password; not after a refused
+	 * account, which would tell that the password was right. */
+	if (result != RDP_PAM_OK)
+		rdp_auth_pam_refusal_wait(start);
+	return result;
 }
 
 bool rdp_auth_have_pam(void)
@@ -102,10 +135,10 @@ bool rdp_auth_have_pam(void)
 	return true;
 }
 #else
-bool rdp_auth_pam(const char* confdir, const char* user, const char* password,
-		const char* rhost)
+enum rdp_pam_result rdp_auth_pam(const char* confdir, const char* user,
+		const char* password, const char* rhost)
 {
-	return false;
+	return RDP_PAM_ERROR;
 }
 
 bool rdp_auth_have_pam(void)

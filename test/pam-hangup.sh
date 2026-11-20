@@ -1,18 +1,20 @@
 #!/bin/bash
-# -a pam against mwc: clients that hang up while PAM still checks their
-# (wrong) password.
+# -a pam against mwc: wrong guesses that try to get around the lockout,
+# by hanging up while PAM still checks, or with other user names.
 #
-#   MWC=/path/to/mwc test/pam-hangup.sh [build/wayrdp]
+#   test/pam-hangup.sh [build/wayrdp]
 #
 # Needs /etc/pam.d/wayrdp, but not the password: every guess is wrong. It
 # skips where PAM counts failed logins (pam_faillock, pam_tally), which
-# six wrong passwords could lock the account with.
-# Checks: three wrong passwords whose clients hung up before PAM answered
-# still lock new connections out; and checks that go on after their client
-# left count toward the four that may wait at a time, added to the
-# connections waiting themselves (pam_unix delays a failure by about two
-# seconds, so they pile up). WAYRDP_WRAP goes in front
-# of wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
+# six wrong passwords could lock the account with. Checks:
+#  - three wrong passwords whose clients hung up before PAM answered still
+#    lock new connections out
+#  - checks that go on after their client left count toward the four that
+#    may wait at a time, added to the connections waiting themselves
+#    (pam_unix delays a failure by about two seconds, so they pile up)
+#  - a user name that isn't the account is refused no sooner than a wrong
+#    password, and three of them lock out
+# WAYRDP_WRAP goes in front of wayrdp, e.g. "valgrind --log-file=/tmp/vg.log".
 set -u
 
 WAYRDP=${1:-build/wayrdp}
@@ -110,8 +112,9 @@ for n in 1 2 3; do
 	client h$n "$PORT"
 	wait_count "client wants" $((sent + 1)) "client h$n sent no credentials"
 	hang_up h$n
-	wait_count "PAM: Authentication failure" $n "PAM never answered for h$n"
-	[ "$(count "wrong password for $USER_NAME")" = 0 ] \
+	# Counted when the answer is handled, after the time a refusal takes.
+	wait_count "A client that is gone: wrong password" $n "PAM never answered for h$n"
+	[ "$(count "127.0.0.1: wrong password for $USER_NAME")" = 0 ] \
 		|| fail "client h$n was still there when PAM answered; the test needs it gone"
 done
 echo "ok: three clients hung up while PAM checked"
@@ -155,4 +158,26 @@ wait_count "Connection refused: 4 are logging on already" 1 \
 	"a fifth connection wasn't refused beside three checks and one waiting" "$dir/wayrdp2.log"
 exec 3>&- 4>&-
 echo "ok: checks of clients that left count toward the four, beside waiting connections"
+# A user name that isn't the account is a guess too: refused no sooner
+# than a wrong password, so the time doesn't tell, and three of them lock
+# out. A fresh wayrdp; the clients stay until they are refused.
+PORT3=$((PORT + 2))
+start_wayrdp "$PORT3" "$dir/wayrdp3.log"
+for n in 1 2 3; do
+	client_as() {
+		start_mwc "$1" "sdl-freerdp3 /v:127.0.0.1:$PORT3 /sec:tls /cert:ignore /size:1024x768 /u:not-$USER_NAME-$n /p:wrong-$1 /t:$1 /log-level:WARN >$dir/client-$1.log 2>&1"
+	}
+	sent=$(count "client wants" "$dir/wayrdp3.log")
+	client_as u$n
+	wait_count "client wants" $((sent + 1)) "client u$n sent no credentials" "$dir/wayrdp3.log"
+	t0=$(date +%s%N)
+	wait_count "user not-$USER_NAME-$n refused" 1 "the user name of u$n wasn't refused" "$dir/wayrdp3.log"
+	ms=$((($(date +%s%N) - t0) / 1000000))
+	[ "$ms" -ge 1500 ] || fail "user name $n refused after $ms ms, sooner than a wrong password"
+	hang_up u$n
+done
+exec 3<>/dev/tcp/127.0.0.1/$PORT3
+wait_count "Connection refused: locked" 1 "no lockout after three wrong user names" "$dir/wayrdp3.log"
+exec 3>&-
+echo "ok: wrong user names take as long as wrong passwords and lock out"
 echo "PASS"

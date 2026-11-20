@@ -74,7 +74,10 @@ static int test_items(void)
 		"auth required pam_permit.so\n"
 		"account required pam_permit.so\n", dir);
 	ASSERT_INT_EQ(0, service(conf));
-	ASSERT_TRUE(rdp_auth_pam(dir, "someone", "secret 1", "192.0.2.7"));
+	uint64_t start = rdp_auth_pam_now_us();
+	ASSERT_INT_EQ(RDP_PAM_OK, rdp_auth_pam(dir, "someone", "secret 1", "192.0.2.7"));
+	/* A success doesn't wait. */
+	ASSERT_TRUE(rdp_auth_pam_now_us() - start < RDP_PAM_REFUSAL_US / 2);
 	const char* d = dumped();
 	ASSERT_TRUE(strstr(d, "rhost=192.0.2.7\n") != NULL);
 	ASSERT_TRUE(strstr(d, "ruser=someone\n") != NULL);
@@ -88,16 +91,22 @@ static int test_refused(void)
 {
 	ASSERT_INT_EQ(0, service("auth required pam_deny.so\n"
 				"account required pam_permit.so\n"));
-	ASSERT_FALSE(rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
+	uint64_t start = rdp_auth_pam_now_us();
+	ASSERT_INT_EQ(RDP_PAM_REFUSED, rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
+	ASSERT_TRUE(rdp_auth_pam_now_us() - start >= RDP_PAM_REFUSAL_US);
 	return 0;
 }
 
-/* The password is right, the account may not log in. */
+/* The password is right, the account may not log in: told apart, and
+ * answered no sooner than a wrong password, so the time doesn't tell
+ * that the password was right. */
 static int test_account(void)
 {
 	ASSERT_INT_EQ(0, service("auth required pam_permit.so\n"
 				"account required pam_deny.so\n"));
-	ASSERT_FALSE(rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
+	uint64_t start = rdp_auth_pam_now_us();
+	ASSERT_INT_EQ(RDP_PAM_ACCOUNT, rdp_auth_pam(dir, "someone", "secret", "192.0.2.7"));
+	ASSERT_TRUE(rdp_auth_pam_now_us() - start >= RDP_PAM_REFUSAL_US);
 	return 0;
 }
 

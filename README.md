@@ -146,8 +146,11 @@ with the setgid helper `unix_chkpwd`.
 Either way, three failed logins in a row lock new connections out for 30 s, at most
 four connections may wait for their logon at a time, and one that hasn't logged on
 after 30 s is closed. Only a password that was checked and refused counts as a failed
-login; mstsc drops two connections per login before that (at its certificate prompt and
-to show its login dialog), and they count for nothing.
+login, with `-a pam` also a user name that isn't the account; mstsc drops two connections
+per login before that (at its certificate prompt and to show its login dialog), and they
+count for nothing. With `-a pam` every refusal takes at least 2 s, whatever was wrong, so
+the time of the answer doesn't tell a wrong user name or a refused account from a wrong
+password.
 
 
 ## Security

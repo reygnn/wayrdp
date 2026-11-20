@@ -96,7 +96,9 @@ Options on the command line win.
 # SECURITY
 
 Three failed logins in a row lock new connections out for 30 s; at most
-four connections may wait for their logon at a time. wayrdp refuses to start
+four connections may wait for their logon at a time. With *-a pam* a user
+name that isn't the account counts as a failed login too, and every refusal
+takes at least 2 s, so its time doesn't tell what was wrong. wayrdp refuses to start
 when the SAM file or the TLS key can be read by others.
 
 # COMPOSITOR SUPPORT

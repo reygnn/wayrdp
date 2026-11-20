@@ -359,13 +359,34 @@ struct pam_job {
 	char* password;
 	/* The client's address, for PAM_RHOST. */
 	char* rhost;
-	bool ok;
+	/* The name the client gave isn't the account: refused, after as long
+	 * as PAM takes, so the time doesn't tell which names are wrong. */
+	char* wrong_user;
+	enum rdp_pam_result result;
 };
 
 static void on_pam_work(struct aml_work* work)
 {
 	struct pam_job* job = aml_get_userdata(work);
-	job->ok = rdp_auth_pam(NULL, job->user, job->password, job->rhost);
+	if (job->wrong_user) {
+		rdp_auth_pam_refusal_wait(rdp_auth_pam_now_us());
+		job->result = RDP_PAM_REFUSED;
+		return;
+	}
+	job->result = rdp_auth_pam(NULL, job->user, job->password, job->rhost);
+}
+
+/* The log line for a refusal: what was wrong. */
+static void log_refusal(const char* host, const struct pam_job* job)
+{
+	if (job->wrong_user)
+		wv_log(WV_LOG_WARNING, "%s: user %s refused", host, job->wrong_user);
+	else if (job->result == RDP_PAM_ACCOUNT)
+		wv_log(WV_LOG_WARNING, "%s: %s may not log in (account)", host, job->user);
+	else if (job->result == RDP_PAM_ERROR)
+		wv_log(WV_LOG_WARNING, "%s: PAM failed for %s", host, job->user);
+	else
+		wv_log(WV_LOG_WARNING, "%s: wrong password for %s", host, job->user);
 }
 
 static void on_pam_done(struct aml_work* work)
@@ -382,18 +403,16 @@ static void on_pam_done(struct aml_work* work)
 
 	/* A client that hung up while its password was checked still made a
 	 * guess: count it here, rdp_server_peer_gone() didn't. */
-	if (!self && !job->ok) {
-		wv_log(WV_LOG_WARNING, "Wrong password for %s, the client is gone",
-				job->user);
+	if (!self && job->result != RDP_PAM_OK) {
+		log_refusal("A client that is gone", job);
 		rdp_auth_failure(&server->auth, gettime_us());
 	}
 
 	if (self) {
 		self->pam_pending = false;
 		self->password_checked = true;
-		if (!job->ok) {
-			wv_log(WV_LOG_WARNING, "%s: wrong password for %s",
-					self->client->hostname, job->user);
+		if (job->result != RDP_PAM_OK) {
+			log_refusal(self->client->hostname, job);
 			rdp_peer_close(self);
 		} else if (!stop_login_deadline(self)) {
 			rdp_peer_close(self);
@@ -420,6 +439,7 @@ static void free_pam_job(void* userdata)
 	}
 	free(job->user);
 	free(job->rhost);
+	free(job->wrong_user);
 	free(job);
 }
 
@@ -439,14 +459,17 @@ static bool start_pam(struct rdp_peer* self)
 				client->hostname);
 		return false;
 	}
-	if (!me || strcasecmp(user, me) != 0) {
-		wv_log(WV_LOG_WARNING, "%s: user %s refused", client->hostname, user);
+	if (!me)
 		return false;
-	}
 
 	struct pam_job* job = calloc(1, sizeof(*job));
 	if (!job)
 		return false;
+	/* A guess as well, counted and answered like a wrong password. */
+	if (strcasecmp(user, me) != 0 && !(job->wrong_user = strdup(user))) {
+		free(job);
+		return false;
+	}
 	job->server = self->server;
 	job->serial = self->serial;
 	/* PAM wants the account's own spelling. */
