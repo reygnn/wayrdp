@@ -257,6 +257,10 @@ struct rdp_test_switches {
 	/* WAYRDP_LOGIN_TIMEOUT=N: seconds a connection has to log on; 0 for
 	 * the default. */
 	uint32_t login_timeout_s;
+	/* WAYRDP_HOLD_AFTER_LOGON=1: a connection that logged on with NLA
+	 * stays on its thread until it is closed, as one whose connection
+	 * sequence takes long. */
+	bool hold_after_logon;
 };
 
 struct rdp_server {

@@ -9,7 +9,9 @@
 #    nothing: while one is held, and while three are, xfreerdp3 +auth-only
 #    logs on at once (in under 2 s, before the timeout); without a login
 #    the held one is closed after the timeout, as still connecting; a
-#    session that logged on (sdl-freerdp3) stays past the timeout
+#    session that logged on (sdl-freerdp3) stays past the timeout; three
+#    right passwords whose connections are closed between NLA and
+#    PostConnect don't lock out
 #  - -a pam (TLS only): wayrdp answers a new connection while one is held,
 #    and closes the held one after the timeout; a client that goes on its
 #    own during its password check isn't taken for one still connecting
@@ -141,6 +143,28 @@ grep -q "disconnected after" "$dir/wayrdp.log" \
 kill -0 "$session" 2>/dev/null || fail "the NLA client is gone"
 echo "ok: an NLA session stays past the login timeout"
 kill "$session" 2>/dev/null; wait "$session" 2>/dev/null
+
+# A right NLA password whose connection is closed before the main loop
+# took it over is no failed login: three of them don't lock out.
+# WAYRDP_HOLD_AFTER_LOGON keeps each on its thread after NLA, as a slow
+# connection sequence would, until the login timeout closes it.
+PORT3=$((PORT + 2))
+WAYRDP_HOLD_AFTER_LOGON=1 start_wayrdp "$dir/wayrdp-hold.log" "$PORT3"
+for n in 1 2 3; do
+	timeout 10 xfreerdp3 /v:127.0.0.1:$PORT3 /u:$USER_NAME /p:"$PASSWORD" \
+		/cert:ignore +auth-only >"$dir/auth-hold$n.log" 2>&1
+	for ((i = 0; i < 100; i++)); do
+		[ "$(grep -c "still connecting" "$dir/wayrdp-hold.log")" -ge $n ] && break
+		sleep 0.1
+	done
+	[ "$(grep -c "logged on as" "$dir/wayrdp-hold.log")" -ge $n ] \
+		&& [ "$(grep -c "still connecting" "$dir/wayrdp-hold.log")" -ge $n ] \
+		|| fail "login $n wasn't held after NLA and closed by the timeout"
+done
+grep -q "failed logins" "$dir/wayrdp-hold.log" \
+	&& fail "right NLA passwords closed before the handover locked out"
+python3 -I "$HOLD" "$PORT3" 0 3 >/dev/null || fail "locked out after right NLA passwords"
+echo "ok: right NLA passwords closed before the handover don't lock out"
 
 # ---- -a pam ------------------------------------------------------------------
 PORT2=$((PORT + 1))

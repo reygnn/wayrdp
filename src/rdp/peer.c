@@ -872,6 +872,11 @@ static void* peer_thread(void* data)
 		/* No drdynvc before the main loop has the connection. */
 		if (!WTSVirtualChannelManagerCheckFileDescriptorEx(ctx->vcm, FALSE))
 			break;
+		/* Test switch: logged on, then held until closed. */
+		if (self->logon_waiting && self->server->test.hold_after_logon) {
+			WaitForSingleObject(self->abort_event, INFINITE);
+			break;
+		}
 		if (self->connected) {
 			ok = true;
 			break;

@@ -93,6 +93,10 @@ Options on the command line win.
 *WAYRDP_LOGIN_TIMEOUT=<seconds>*
 	How long a connection may take to log on (default 30). For tests.
 
+*WAYRDP_HOLD_AFTER_LOGON=1*
+	Hold a connection that logged on with NLA before the rest of its
+	connection sequence, until it is closed. For tests.
+
 # SECURITY
 
 Three failed logins in a row lock new connections out for 30 s; at most

@@ -97,6 +97,7 @@ static void read_test_switches(struct rdp_test_switches* test)
 	test->force_planar = env_on("WAYRDP_FORCE_PLANAR");
 	test->no_gfx = env_on("WAYRDP_NO_GFX");
 	test->ignore_gfx_caps = env_on("WAYRDP_TEST_IGNORE_GFX_CAPS");
+	test->hold_after_logon = env_on("WAYRDP_HOLD_AFTER_LOGON");
 
 	const char* timeout = getenv("WAYRDP_LOGIN_TIMEOUT");
 	int s = timeout ? atoi(timeout) : 0;
@@ -156,6 +157,10 @@ struct rdp_server* rdp_server_new(const struct rdp_server_config* config)
 	self->stats_ticker = aml_ticker_new(STATS_INTERVAL_US, on_stats_tick,
 			self, NULL);
 	aml_start(aml_get_default(), self->stats_ticker);
+
+	/* Once here: the NLA logon asks for it on the connections' threads,
+	 * and it fills a static buffer the first time (getpwuid). */
+	rdp_auth_user();
 
 	if (rdp_listener_open(self) < 0)
 		goto failure;
@@ -262,8 +267,10 @@ void rdp_server_peer_gone(struct rdp_server* self, struct rdp_peer* peer)
 {
 	/* Only a password that was checked and refused counts. A client
 	 * that hangs up before (mstsc does at its certificate prompt and
-	 * again to show its login dialog) tested nothing. */
-	if (!peer->logged_on && peer->password_checked)
+	 * again to show its login dialog) tested nothing. One that logged on
+	 * with NLA on its thread and went before the main loop took it over
+	 * (logon_waiting) had it right. */
+	if (!peer->logged_on && peer->password_checked && !peer->logon_waiting)
 		rdp_auth_failure(&self->auth, gettime_us());
 
 	if (self->active == peer) {
