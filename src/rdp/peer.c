@@ -1017,6 +1017,8 @@ struct rdp_peer* rdp_peer_new(struct rdp_server* server, freerdp_peer* client)
 	client->ContextNew = context_new;
 	client->ContextFree = context_free;
 	if (!freerdp_peer_context_new(client)) {
+		if (self->sock >= 0)
+			close(self->sock);
 		free(self);
 		return NULL;
 	}
