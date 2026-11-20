@@ -1,59 +1,29 @@
-test('table-printer', executable('table-printer',
-	[
-		'table-printer-test.c',
-		'../../src/table-printer.c',
-	],
-	include_directories: inc,
-	dependencies: [ ],
-))
-test('option-parser', executable('option-parser',
-	[
-		'option-parser-test.c',
-		'../../src/option-parser.c',
-		'../../src/table-printer.c',
-		'../../src/strlcpy.c',
-	],
-	include_directories: inc,
-	dependencies: [ ],
-))
-test('keymap', executable('keymap',
-	[
-		'keymap-test.c',
-		'../../src/rdp/keymap.c',
-	],
-	include_directories: [inc, include_directories('../../src')],
-	dependencies: [ ],
-))
-test('text', executable('text',
-	[
-		'text-test.c',
-		'../../src/rdp/text.c',
-	],
-	include_directories: [inc, include_directories('../../src')],
-	dependencies: [ ],
-))
-test('convert', executable('convert',
-	[
-		'convert-test.c',
-		'../../src/rdp/convert.c',
-	],
-	include_directories: [inc, include_directories('../../src')],
-	dependencies: [ ],
-))
-test('planar', executable('planar',
-	[
-		'planar-test.c',
-		'../../src/rdp/encoder.c',
-	],
-	# '..' also brings the build root, where config.h is.
-	include_directories: [inc, include_directories('../..', '../../src')],
-	dependencies: [ freerdp, winpr, pixman ],
-))
-test('flow', executable('flow',
-	[
-		'flow-test.c',
-		'../../src/rdp/flow.c',
-	],
-	include_directories: [inc, include_directories('../../src')],
-	dependencies: [ ],
-))
+# One program per module: NAME-test.c with the sources it tests, always under
+# ASan and UBSan, whatever the build type, so an overflow fails the test.
+san = ['-fsanitize=address,undefined', '-fno-sanitize-recover=all',
+	'-fno-omit-frame-pointer']
+src_inc = include_directories('../../src')
+# '../..' also brings the build root, where config.h is.
+root_inc = include_directories('../..', '../../src')
+
+units = {
+	'table-printer': [['../../src/table-printer.c'], inc, []],
+	'option-parser': [['../../src/option-parser.c', '../../src/table-printer.c',
+		'../../src/strlcpy.c'], inc, []],
+	'keymap': [['../../src/rdp/keymap.c'], [inc, src_inc], []],
+	'text': [['../../src/rdp/text.c'], [inc, src_inc], []],
+	'convert': [['../../src/rdp/convert.c'], [inc, src_inc], []],
+	'planar': [['../../src/rdp/encoder.c'], [inc, root_inc],
+		[freerdp, winpr, pixman]],
+	'flow': [['../../src/rdp/flow.c'], [inc, src_inc], []],
+}
+
+foreach name, u : units
+	test(name, executable(name,
+		[name + '-test.c'] + u[0],
+		include_directories: u[1],
+		dependencies: u[2],
+		c_args: san,
+		link_args: san,
+	))
+endforeach
